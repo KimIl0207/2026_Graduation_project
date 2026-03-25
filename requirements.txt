@@ -1,2 +1,6 @@
 fastapi
 uvicorn
+fastapi
+PIL
+torch
+torchvision
