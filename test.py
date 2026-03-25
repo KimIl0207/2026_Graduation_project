@@ -42,11 +42,20 @@ transform = transforms.Compose([
     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 ])
 
+MAX_FILE_SIZE = 10 * 1024 * 1024
 
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
     image_bytes = await file.read()
+
+    if len(image_bytes) > MAX_FILE_SIZE:
+        return {"error": "File size exceeds the 10MB limit."}
+    
     image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    if image.width > 4096 or image.height > 4096:
+        return {"error": "Image resolution must be at least 4096x4096 pixels."}
+    
+    image = image.resize((224, 224))
     input_tensor = transform(image).unsqueeze(0)
 
     with torch.no_grad():
@@ -90,3 +99,8 @@ async def save_correction(
         "message": f"Saved to {correct_label} folder",
         "saved_path": save_path
     }
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("test:app", host="0.0.0.0", port=port)

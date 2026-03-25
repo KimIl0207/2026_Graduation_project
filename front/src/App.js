@@ -2,10 +2,17 @@ import { useState } from 'react';
 import './App.css';
 
 const BASE_URL = "http://localhost:8000";
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+const MAX_RESOLUTION = 4096; // 4096x4096 pixels
 
+// 파일 업로드 및 예측 결과 가져오기
 async function fetchPrediction(file) {
   const imageData = new FormData();
   imageData.append('file', file);
+
+  if (file.size > MAX_FILE_SIZE || file.width > MAX_RESOLUTION || file.height > MAX_RESOLUTION) {
+    return { error: "File size exceeds 10MB or resolution exceeds 4096x4096 pixels." };
+  }
 
   try {
     const response = await fetch(`${BASE_URL}/predict`, {
@@ -21,6 +28,7 @@ async function fetchPrediction(file) {
   }
 }
 
+// 정답 폴더에 저장
 async function saveCorrection(file, correctLabel) {
   const formData = new FormData();
   formData.append('file', file);
@@ -46,6 +54,7 @@ function App() {
   const [selectedFile, setSelectedFile] = useState(null);
   const [saveMessage, setSaveMessage] = useState("");
 
+  // 파일 업로드 및 예측 결과 가져오기
   const handleUpload = async () => {
     const file = document.getElementById('fileInput').files[0];
     if (!file) return;
@@ -58,6 +67,7 @@ function App() {
     setResult(data);
   };
 
+  // 정답 폴더에 저장
   const handleSaveCorrection = async (label) => {
     if (!selectedFile) return;
 
@@ -82,6 +92,7 @@ function App() {
         <div>
           <p>Label: {result.label}</p>
           <p>Probability: {result.probability}</p>
+          <p>{result.error && `Error: ${result.error}`}</p>
 
           <hr />
 
