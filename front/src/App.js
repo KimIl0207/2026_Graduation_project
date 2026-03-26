@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import './App.css';
 
-const BASE_URL = "https://two026-graduation-project.onrender.com:8000";
+const BASE_URL = "https://two026-graduation-project.onrender.com";
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const MAX_RESOLUTION = 4096; // 4096x4096 pixels
 

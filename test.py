@@ -12,7 +12,10 @@ from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
 
-origins = ["http://localhost:3001"]
+origins = [
+    "http://localhost:3001",
+    "http://localhost:3000"
+]
 CNN_MODEL_PATH = "./model/best_efficientnet_b0_v2.pth"
 
 # 틀린 데이터 저장 폴더
