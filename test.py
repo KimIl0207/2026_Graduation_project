@@ -16,7 +16,13 @@ origins = [
     "http://localhost:3001",
     "http://localhost:3000"
 ]
-CNN_MODEL_PATH = "./model/best_efficientnet_b0_v2.pth"
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CNN_MODEL_PATH = os.path.join(BASE_DIR, "model", "best_efficientnet_b0_v2.pth")
+
+print("BASE_DIR:", BASE_DIR)
+print("MODEL_PATH:", CNN_MODEL_PATH)
+print("MODEL_EXISTS:", os.path.exists(CNN_MODEL_PATH))
 
 # 틀린 데이터 저장 폴더
 CORRECTION_SAVE_DIR = "./corrections"
@@ -34,7 +40,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-cnn_model = models.efficientnet_b0(weights="DEFAULT")
+cnn_model = models.efficientnet_b0(weights=None)
 cnn_model.classifier[1] = nn.Linear(1280, 1)
 cnn_model.load_state_dict(torch.load(CNN_MODEL_PATH, map_location="cpu"))
 cnn_model.eval()
