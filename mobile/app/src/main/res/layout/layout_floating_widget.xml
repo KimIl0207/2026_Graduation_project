@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:background="#E8E8E8"
+    android:padding="8dp"
+    android:gravity="center"
+    android:elevation="8dp">
+
+    <TextView
+        android:id="@+id/dragHandle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text=" ≡ "
+        android:textColor="#555555"
+        android:textSize="28sp"
+        android:textStyle="bold"
+        android:paddingEnd="12dp" />
+
+    <Button
+        android:id="@+id/btnCaptureText"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="텍스트 추출"
+        android:backgroundTint="#6A65FF"
+        android:textColor="#FFFFFF"
+        android:textStyle="bold"
+        android:layout_marginEnd="8dp" />
+
+    <Button
+        android:id="@+id/btnCaptureImage"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="이미지 판독"
+        android:backgroundTint="#4CAF50"
+        android:textColor="#FFFFFF"
+        android:textStyle="bold"
+        android:layout_marginEnd="8dp" />
+
+    <Button
+        android:id="@+id/btnClose"
+        android:layout_width="48dp"
+        android:layout_height="wrap_content"
+        android:text="X"
+        android:backgroundTint="#DE6662"
+        android:textColor="#FFFFFF"
+        android:textStyle="bold" />
+</LinearLayout>
