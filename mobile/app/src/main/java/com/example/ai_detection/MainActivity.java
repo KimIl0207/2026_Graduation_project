@@ -92,4 +92,10 @@ public class MainActivity extends AppCompatActivity {
         } catch (Exception e) { e.printStackTrace(); }
         return stringBuilder.toString();
     }
+
+    android.widget.Button btnSetUrl = findViewById(R.id.buttonServerConnect);
+    private void setServerUrl(String s) {
+
+    }
 }
+
