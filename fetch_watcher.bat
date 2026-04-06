@@ -1,2 +1,0 @@
-powershell -ExecutionPolicy Bypass -File "C:\Users\so021\Documents\Doodles\test_ai\watch-dev.ps1" -RepoPath "C:\Users\so021\Documents\Doodles\test_ai" -BaseBranch dev -IntervalSeconds 30 -AutoFetch
-pause
