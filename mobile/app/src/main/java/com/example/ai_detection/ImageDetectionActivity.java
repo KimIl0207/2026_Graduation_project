@@ -4,7 +4,7 @@ import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
-import android.graphics.Color; // ✨ 색상 제어를 위해 추가
+import android.graphics.Color;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
 import android.net.Uri;
@@ -23,7 +23,7 @@ import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
 
-import org.json.JSONObject; // ✨ 서버 응답(JSON) 분석을 위해 추가
+import org.json.JSONObject;
 
 import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
@@ -31,7 +31,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 
-// ✨ 서버 통신을 위한 OkHttp 라이브러리
 import okhttp3.Call;
 import okhttp3.Callback;
 import okhttp3.MediaType;
@@ -46,7 +45,7 @@ public class ImageDetectionActivity extends AppCompatActivity {
     private ActivityResultLauncher<String> galleryLauncher;
     private ActivityResultLauncher<String> filePickerLauncher;
 
-    // ✨ 서버 통신을 위한 클라이언트 객체
+    // 서버 통신을 위한 클라이언트 객체
     private final OkHttpClient client = new OkHttpClient();
 
     @Override
@@ -135,7 +134,7 @@ public class ImageDetectionActivity extends AppCompatActivity {
 
         layoutImageArea.setOnClickListener(v -> galleryLauncher.launch("image/*"));
 
-        // ✨ [핵심] 판독하기 버튼: 진짜 서버 연동 로직
+        // [핵심] 판독하기 버튼: 진짜 서버 연동 로직
         btnAnalyze.setOnClickListener(v -> {
             if (imageViewUploaded.getVisibility() == View.GONE || imageViewUploaded.getDrawable() == null) {
                 Toast.makeText(this, "먼저 판독할 이미지를 선택해주세요!", Toast.LENGTH_SHORT).show();
@@ -158,21 +157,21 @@ public class ImageDetectionActivity extends AppCompatActivity {
                 drawable.draw(canvas);
             }
 
-            // 2. JPG 데이터로 압축 (친구 서버 요구사항)
+            // 2. JPG 데이터로 압축
             ByteArrayOutputStream stream = new ByteArrayOutputStream();
             bitmap.compress(Bitmap.CompressFormat.JPEG, 100, stream);
             byte[] byteArray = stream.toByteArray();
 
-            // 3. 폼 데이터 구성 (필드명: file)
+            // 3. 폼 데이터 구성
             RequestBody requestBody = new MultipartBody.Builder()
                     .setType(MultipartBody.FORM)
                     .addFormDataPart("file", "detect.jpg",
                             RequestBody.create(byteArray, MediaType.parse("image/jpeg")))
                     .build();
 
-            // 4. 서버 요청 생성
+            // 4. 서버 요청 생성 (끝에 /predict 확인)
             Request request = new Request.Builder()
-                    .url("https://abc8-119-207-138-153.ngrok-free.app/predict")
+                    .url(getString(R.string.server_url)+"/predict")
                     .post(requestBody)
                     .build();
 
@@ -197,25 +196,35 @@ public class ImageDetectionActivity extends AppCompatActivity {
                             double probability = jsonObject.getDouble("probability");
                             int percent = (int) (probability * 100);
 
-                            // ✨ 결과에 따른 맞춤형 문구 및 색상 로직
+                            // ✨ 추가된 데이터 1: 생성 모델 이름
+                            String generatorModel = jsonObject.optString("generator_model", "알 수 없음");
+
+                            // ✨ 추가된 데이터 2: 세부 확률 (probs)
+                            String probsText = "";
+                            if (jsonObject.has("probs")) {
+                                JSONObject probsObject = jsonObject.getJSONObject("probs");
+                                int sdPercent = (int) (probsObject.getDouble("sd") * 100);
+                                int mjPercent = (int) (probsObject.getDouble("mj") * 100);
+                                int bgPercent = (int) (probsObject.getDouble("bg") * 100);
+
+                                // 화면에 띄울 세부 확률 문구 조립
+                                probsText = "\n📊 상세: SD(" + sdPercent + "%), MJ(" + mjPercent + "%), BG(" + bgPercent + "%)";
+                            }
+
                             final String resultMsg;
-                            final int color;
 
                             if ("AI Generated".equals(label)) {
-                                resultMsg = "판독 완료: AI 생성 확률 " + percent + "% 입니다.";
-                                 // color = Color.parseColor("#E91E63"); // 경고용 분홍/빨강
+                                // AI 이미지인 경우, 모델 이름과 세부 확률까지 모두 한 번에 출력!
+                                resultMsg = "판독 완료: AI 생성 확률 " + percent + "%\n💡 유력 모델: " + generatorModel + probsText;
                             } else if ("Real Image".equals(label)) {
-                                resultMsg = "판독 완료: AI 생성 확률 " + percent + "% 입니다.";
-                                 // color = Color.parseColor("#4CAF50"); // 안전용 초록색
+                                resultMsg = "판독 완료: 진짜 사진일 확률 " + percent + "% 입니다.";
                             } else {
                                 resultMsg = "💡 판독 완료: [" + label + "] 확률 " + percent + "%";
-                                color = Color.BLACK;
                             }
 
                             new Handler(Looper.getMainLooper()).post(() -> {
                                 progressBar.setVisibility(View.GONE);
                                 tvStatus.setText(resultMsg);
-                                // tvStatus.setTextColor(color);
                             });
 
                         } catch (Exception e) {

@@ -229,7 +229,7 @@ public class FloatingService extends Service {
                 .build();
 
         Request request = new Request.Builder()
-                .url("https://abc8-119-207-138-153.ngrok-free.app/predict")
+                .url("https://5901-119-207-138-153.ngrok-free.app/predict")
                 .post(requestBody)
                 .build();
 
