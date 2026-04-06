@@ -15,12 +15,13 @@ app = FastAPI()
 # CORS 설정
 origins = [
     "http://localhost:3001",
-    "http://localhost:3000"
+    "http://localhost:3000",
+    "https://6913-210-206-150-26.ngrok-free.app"
 ]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

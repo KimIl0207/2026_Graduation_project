@@ -1,5 +1,6 @@
 /__pycache__
-/corrections
+/server/__pycache__
+/server/corrections
 /front
 py.py
 fetch_watcher.bat
