@@ -10,14 +10,14 @@ LOG_PATH = Path(__file__).resolve().parents[1] / "corrections" / "logs.jsonl"
 def save_log(data):
     log_entry = {
         "id": str(uuid.uuid4()),
-        "filepath": data["filepath"],
-        "correct_label": data["correct_label"],
-        "predicted_label": data["predicted_label"],
-        "predicted_probability": data["predicted_probability"],
-        "selected_generator_model": data["selected_generator_model"],
-        "sd_prob": data["sd_prob"],
-        "mj_prob": data["mj_prob"],
-        "bg_prob": data["bg_prob"],
+        "filepath": data.get("filepath"),
+        "correct_label": data.get("correct_label"),
+        "predicted_label": data.get("predicted_label"),
+        "predicted_probability": data.get("predicted_probability"),
+        "selected_generator_model": data.get("selected_generator_model"),
+        "sd_prob": data.get("sd_prob"),
+        "mj_prob": data.get("mj_prob"),
+        "bg_prob": data.get("bg_prob"),
         "source": data.get("source", "unknown"),
         "created_at": datetime.now(timezone.utc).isoformat()
     }
