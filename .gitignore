@@ -6,7 +6,7 @@ py.py
 fetch_watcher.bat
 fetch_watcher.ps1
 ngrok.exe
-/mobile/mobile/.idea
+/mobile/.idea
 /mobile/*.iml
 /mobile/.gradle
 /mobile/local.properties
