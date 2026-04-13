@@ -2,13 +2,15 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 
+from server.util.logger import save_log
+
 
 CORRECTION_SAVE_DIR = Path(__file__).resolve().parents[1] / "corrections"
 REAL_DIR = CORRECTION_SAVE_DIR / "real"
 FAKE_DIR = CORRECTION_SAVE_DIR / "fake"
 
 
-def save_correction_file(file, correct_label):
+def save_correction_file(file, correct_label, prediction=None):
     if correct_label not in ["real", "fake"]:
         return {"success": False, "message": "correct_label must be 'real' or 'fake'"}
 
@@ -26,6 +28,19 @@ def save_correction_file(file, correct_label):
 
     with save_path.open("wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
+
+    prediction = prediction or {}
+    save_log({
+        "filepath": str(save_path),
+        "correct_label": correct_label,
+        "predicted_label": prediction.get("predicted_label"),
+        "predicted_probability": prediction.get("predicted_probability"),
+        "selected_generator_model": prediction.get("selected_generator_model"),
+        "sd_prob": prediction.get("sd_prob"),
+        "mj_prob": prediction.get("mj_prob"),
+        "bg_prob": prediction.get("bg_prob"),
+        "source": prediction.get("source", "save-correction"),
+    })
 
     return {
         "success": True,

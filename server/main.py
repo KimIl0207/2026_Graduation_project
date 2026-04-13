@@ -1,11 +1,10 @@
+from typing import Optional
+
 from fastapi import FastAPI, UploadFile, File, Form
 import os
-import time
 
-from torchvision import transforms
 from fastapi.middleware.cors import CORSMiddleware
 
-from server.util.logger import save_log
 from server.util.save_correction import save_correction_file
 from service.model_loader import load_models
 from service.predict import predict_image
@@ -45,9 +44,24 @@ async def predict(file: UploadFile = File(...)):
 @app.post("/save-correction")
 async def save_correction(
     file: UploadFile = File(...),
-    correct_label: str = Form(...)
+    correct_label: str = Form(...),
+    predicted_label: Optional[str] = Form(None),
+    predicted_probability: Optional[float] = Form(None),
+    selected_generator_model: Optional[str] = Form(None),
+    sd_prob: Optional[float] = Form(None),
+    mj_prob: Optional[float] = Form(None),
+    bg_prob: Optional[float] = Form(None),
 ):
-    return save_correction_file(file, correct_label)
+    prediction = {
+        "predicted_label": predicted_label,
+        "predicted_probability": predicted_probability,
+        "selected_generator_model": selected_generator_model,
+        "sd_prob": sd_prob,
+        "mj_prob": mj_prob,
+        "bg_prob": bg_prob,
+        "source": "save-correction",
+    }
+    return save_correction_file(file, correct_label, prediction)
 
 if __name__ == "__main__":
     import uvicorn
