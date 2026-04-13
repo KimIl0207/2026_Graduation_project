@@ -13,7 +13,7 @@ def load_single_model(model_path: str):
 
 
 def load_models():
-    base_dir = os.path.dirname(os.path.abspath(__file__))
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
     sd_model_path = os.path.join(base_dir, "model", "best_efficientnet_b0_Diffusion.pth")
     midjourney_model_path = os.path.join(base_dir, "model", "best_efficientnet_b0_Midjourney.pth")

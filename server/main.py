@@ -6,8 +6,8 @@ import os
 from fastapi.middleware.cors import CORSMiddleware
 
 from server.util.save_correction import save_correction_file
-from service.model_loader import load_models
-from service.predict import predict_image
+from server.service.model_loader import load_models
+from server.service.predict import predict_image
 
 app = FastAPI()
 # CORS 설정
@@ -66,4 +66,4 @@ async def save_correction(
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
-    uvicorn.run("test:app", host="0.0.0.0", port=port)
+    uvicorn.run("server.main:app", host="0.0.0.0", port=port)
