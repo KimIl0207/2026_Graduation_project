@@ -29,7 +29,11 @@ def predict_image(image_bytes, models_dict):
 
     generator_model = max(probs, key=probs.get)
     probability = probs[generator_model]
-    label = "AI Generated" if probability >= 0.5 else "Real Image"
+    if probability >= 0.5:
+        label = "AI Generated"
+    else:
+        label = "Real Image"
+        generator_model = "Not an ai"
 
     return {
         "label": label,
