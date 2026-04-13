@@ -55,6 +55,7 @@ import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
 
+
 public class FloatingService extends Service {
 
     private WindowManager windowManager;
@@ -214,6 +215,8 @@ public class FloatingService extends Service {
                 });
     }
 
+    ServerApi serverApi = new ServerApi(this);
+
     private void sendImageToServer(Bitmap bitmap) {
         Handler mainHandler = new Handler(Looper.getMainLooper());
         mainHandler.post(() -> Toast.makeText(FloatingService.this, "AI 분석을 요청합니다...", Toast.LENGTH_SHORT).show());
@@ -229,7 +232,7 @@ public class FloatingService extends Service {
                 .build();
 
         Request request = new Request.Builder()
-                .url("https://5901-119-207-138-153.ngrok-free.app/predict")
+                .url(serverApi.getPredictUrl())
                 .post(requestBody)
                 .build();
 

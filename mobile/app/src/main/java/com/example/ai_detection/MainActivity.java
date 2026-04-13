@@ -3,6 +3,9 @@ package com.example.ai_detection;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
+import android.view.View;
+import android.widget.Button;
+import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -61,6 +64,28 @@ public class MainActivity extends AppCompatActivity {
         TextView navImage = findViewById(R.id.textViewImage);
         navImage.setOnClickListener(v -> startActivity(new Intent(this, ImageDetectionActivity.class)));
 
+        EditText editServerURL = findViewById(R.id.serverURL);
+
+        Button btnSetUrl = findViewById(R.id.buttonServerConnect);
+
+        btnSetUrl.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                String inputUrl = editServerURL.getText().toString().trim();
+
+                if (!inputUrl.endsWith("/")) {
+                    inputUrl += "/";
+                }
+
+                getSharedPreferences("app_prefs", MODE_PRIVATE)
+                        .edit()
+                        .putString("server_url", inputUrl)
+                        .apply();
+
+                Toast.makeText(MainActivity.this, "서버 URL이 변경되었습니다.:"+ inputUrl, Toast.LENGTH_SHORT).show();
+            }
+        });
+
 // ✨ 새로 만든 "위젯 켜기" 버튼과 연결!
         android.widget.Button btnStartWidget = findViewById(R.id.buttonStartWidget);
         if (btnStartWidget != null) {
@@ -93,9 +118,6 @@ public class MainActivity extends AppCompatActivity {
         return stringBuilder.toString();
     }
 
-    android.widget.Button btnSetUrl = findViewById(R.id.buttonServerConnect);
-    private void setServerUrl(String s) {
 
-    }
 }
 

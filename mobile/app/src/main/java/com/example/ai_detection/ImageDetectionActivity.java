@@ -1,6 +1,8 @@
 package com.example.ai_detection;
 
+import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
@@ -39,6 +41,34 @@ import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
+
+class ServerApi {
+    private Context context;
+
+    public ServerApi(Context context) {
+        this.context = context;
+    }
+
+    public String getBaseUrl() {
+        SharedPreferences prefs =
+                context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE);
+
+        return prefs.getString(
+                "server_url",
+                context.getString(R.string.server_url)
+        );
+    }
+
+    public String getPredictUrl() {
+        String baseUrl = getBaseUrl();
+
+        if (!baseUrl.endsWith("/")) {
+            baseUrl += "/";
+        }
+
+        return baseUrl + "predict";
+    }
+}
 
 public class ImageDetectionActivity extends AppCompatActivity {
 
@@ -134,6 +164,8 @@ public class ImageDetectionActivity extends AppCompatActivity {
 
         layoutImageArea.setOnClickListener(v -> galleryLauncher.launch("image/*"));
 
+        ServerApi serverApi = new ServerApi(this);
+
         // [핵심] 판독하기 버튼: 진짜 서버 연동 로직
         btnAnalyze.setOnClickListener(v -> {
             if (imageViewUploaded.getVisibility() == View.GONE || imageViewUploaded.getDrawable() == null) {
@@ -171,7 +203,7 @@ public class ImageDetectionActivity extends AppCompatActivity {
 
             // 4. 서버 요청 생성 (끝에 /predict 확인)
             Request request = new Request.Builder()
-                    .url(getString(R.string.server_url)+"/predict")
+                    .url(serverApi.getPredictUrl())
                     .post(requestBody)
                     .build();
 
