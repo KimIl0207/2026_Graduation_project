@@ -5,9 +5,9 @@ import os
 
 from fastapi.middleware.cors import CORSMiddleware
 
-from server.util.save_correction import save_correction_file
-from server.service.model_loader import load_models
-from server.service.predict import predict_image
+from util.save_correction import save_correction_file
+from service.model_loader import load_models
+from service.predict import predict_image
 
 app = FastAPI()
 # CORS 설정

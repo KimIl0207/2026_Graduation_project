@@ -2,7 +2,7 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 
-from server.util.logger import save_log
+from util.logger import save_log
 
 
 CORRECTION_SAVE_DIR = Path(__file__).resolve().parents[1] / "corrections"
