@@ -1,5 +1,7 @@
 /__pycache__
 /server/__pycache__
+/server/service/__pycache__
+/server/util/__pycache__
 /server/corrections
 /front
 py.py

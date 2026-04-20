@@ -10,10 +10,6 @@ from dotenv import load_dotenv
 # .env 파일이 있으면 환경 변수를 로드합니다.
 load_dotenv()
 
-# NLTK 초기화 (문장 및 단어 토큰화를 위해 필요)
-nltk.download('punkt', quiet=True)
-nltk.download('punkt_tab', quiet=True)
-
 class AITextDetector:
     def __init__(self, model_path="seongwoo02/ai_text_detector", token=None):
         """
@@ -23,6 +19,9 @@ class AITextDetector:
         """
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print(f"⚡ 현재 연산 장치: {self.device}")
+
+        nltk.download('punkt', quiet=True)
+        nltk.download('punkt_tab', quiet=True)
 
         # 매개변수로 토큰이 없으면 환경 변수에서 시도
         if token is None:
