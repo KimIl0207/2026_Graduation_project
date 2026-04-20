@@ -1,8 +1,16 @@
-fastapi
-uvicorn
-fastapi
-pillow
+# AI Text Detector v2 - Core Dependencies
 torch
 torchvision
+transformers
+numpy
+nltk
+huggingface_hub
+pillow
+
+# API Server Dependencies
+fastapi
+uvicorn
+pydantic
+requests
+python-dotenv
 python-multipart
-/corrections
