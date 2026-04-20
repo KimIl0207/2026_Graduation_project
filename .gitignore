@@ -1,6 +1,11 @@
 /__pycache__
 /server/__pycache__
 /server/corrections
+/.env
+/.env.example
+**/.env
+**/.env.example
+/server/.env
 /front
 py.py
 fetch_watcher.bat
