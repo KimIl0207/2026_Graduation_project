@@ -3,6 +3,7 @@
 /server/service/__pycache__
 /server/util/__pycache__
 /server/corrections
+/server/.env
 /front
 py.py
 fetch_watcher.bat
