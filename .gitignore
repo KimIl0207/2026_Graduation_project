@@ -3,6 +3,10 @@
 /server/service/__pycache__
 /server/util/__pycache__
 /server/corrections
+/.env
+/.env.example
+**/.env
+**/.env.example
 /server/.env
 /front
 py.py
