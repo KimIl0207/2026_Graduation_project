@@ -51,7 +51,7 @@ class AITextDetector:
 
         # 임계값(Threshold) 설정
         self.THRESH_BURST = 11.03
-        self.THRESH_KO_PPL = 155.67
+        self.THRESH_KO_PPL = 500.0
         self.THRESH_EN_PPL = 55.82
 
         print("✅ 모든 모델 및 설정 로드 완료!\n")
