@@ -5,6 +5,7 @@
 /server/corrections
 /.env
 /.env.example
+/server/util/benchmark.py
 **/.env
 **/.env.example
 /server/.env
