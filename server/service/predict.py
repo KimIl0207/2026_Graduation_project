@@ -43,5 +43,6 @@ def predict_image(image_bytes, models_dict):
             "sd": round(sd_prob, 4),
             "mj": round(mj_prob, 4),
             "bg": round(bg_prob, 4),
-        }
+        },
+        "avg_prob": round((sd_prob + mj_prob + bg_prob) / 3, 4)
     }

@@ -10,6 +10,7 @@ from util.save_correction import save_correction_file
 from service.ai_text_detector_engine import AITextDetector
 from service.model_loader import load_models
 from service.predict import predict_image
+from service.predic_video import predict_video as predict_video_file
 
 app = FastAPI(
     title="AI Detection API",
@@ -60,6 +61,10 @@ async def predict(file: UploadFile = File(...)):
     result = predict_image(image_bytes, models_dict)
     return result
 
+@app.post("/predict-video")
+async def predict_video(file: UploadFile = File(...)):
+    result = await predict_video_file(file, models_dict)
+    return result
 
 @app.post("/save-correction")
 async def save_correction(
@@ -98,6 +103,67 @@ async def detect_text(request: TextRequest):
     except Exception as e:
         print(f"Text detection failed: {e}")
         raise HTTPException(status_code=500, detail="Text detection failed.")
+    
+    
+from fastapi import Request # 파일 상단 import 부분에 추가해주세요
+
+# ---------------------------------------------------------
+# [추가할 부분] 카카오톡 챗봇 전용 API 엔드포인트
+# ---------------------------------------------------------
+
+# 카카오 카드 응답을 만들어주는 헬퍼 함수 (재사용 목적)
+def _build_kakao_card(title: str, description: str):
+    return {
+        "version": "2.0",
+        "template": {
+            "outputs": [
+                {
+                    "basicCard": {
+                        "title": title,
+                        "description": description,
+                        "buttons": [
+                            {
+                                "action": "message",
+                                "label": "처음으로 돌아가기",
+                                "messageText": "메뉴"
+                            }
+                        ]
+                    }
+                }
+            ]
+        }
+    }
+
+# 1. 텍스트 판별용 스킬 서버
+@app.post("/kakao/detect/text")
+async def kakao_detect_text(request: Request):
+    kakao_data = await request.json()
+    
+    # 카카오에서 보낸 발화 내용(사용자가 입력한 텍스트) 추출
+    user_request = kakao_data.get("userRequest", {})
+    user_text = user_request.get("utterance", "")
+
+    # 글자 수 체크 (기존 로직과 동일하게 유지)
+    if not user_text or len(user_text.strip()) < 10:
+        return _build_kakao_card("오류", "텍스트가 너무 짧습니다. 10자 이상 입력해주세요.")
+
+    try:
+        # 기존 AI 엔진(AITextDetector) 실행
+        detector = get_text_detector()
+        raw_result = detector.detect(user_text)
+        
+        # ⭐ 주의: raw_result가 어떤 형태(Dict)로 나오는지에 따라 아래 코드를 수정해야 합니다!
+        # 예시로, raw_result가 {"ai_probability": 85.5, "label": "AI Generated"} 라고 가정했습니다.
+        ai_prob = raw_result.get("ai_probability", 0) # 엔진 결과값 키에 맞춰 수정하세요!
+        
+        description = f"입력하신 텍스트가 AI로 작성되었을 확률은 [{ai_prob}%] 입니다.\n\n▶ 원문: {user_text[:15]}..."
+        
+        # 카카오 규격으로 리턴
+        return _build_kakao_card("💡 텍스트 판별 결과", description)
+
+    except Exception as e:
+        print(f"Kakao Text detection failed: {e}")
+        return _build_kakao_card("오류 발생", "서버 분석 중 오류가 발생했습니다.")
 
 if __name__ == "__main__":
     import uvicorn

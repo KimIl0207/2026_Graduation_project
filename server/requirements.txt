@@ -6,6 +6,7 @@ numpy
 nltk
 huggingface_hub
 pillow
+opencv-python
 
 # API Server Dependencies
 fastapi
