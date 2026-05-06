@@ -3,14 +3,28 @@ import torch
 from PIL import Image
 from torchvision import transforms
 
-transform = transforms.Compose([
+image_transform = transforms.Compose([
     transforms.Resize((224, 224)),
     transforms.ToTensor(),
+    # transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
 ])
 
-def predict_image(image_bytes, models_dict):
+video_transform = transforms.Compose([
+    transforms.Resize((256, 256)),
+    transforms.ToTensor(),
+    # transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+])
+
+def predict_image(image_bytes, models_dict, mode="image"):
     image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-    input_tensor = transform(image).unsqueeze(0)
+    if mode == "image":
+        input_tensor = image_transform(image)
+    elif mode == "video":
+        input_tensor = video_transform(image)
+    else:
+        raise ValueError("Invalid mode")
+
+    input_tensor = input_tensor.unsqueeze(0)
 
     sd_model = models_dict["sd"]
     mj_model = models_dict["midjourney"]

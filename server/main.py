@@ -1,6 +1,7 @@
+import httpx
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Request
 import os
 
 from fastapi.middleware.cors import CORSMiddleware
@@ -104,124 +105,96 @@ async def detect_text(request: TextRequest):
         print(f"Text detection failed: {e}")
         raise HTTPException(status_code=500, detail="Text detection failed.")
     
-    
-from fastapi import Request # 파일 상단 import 부분에 추가해주세요
-import aiohttp # 파일 상단 import 부분에 추가해주세요
 
-# ---------------------------------------------------------
-# [추가할 부분] 카카오톡 챗봇 전용 API 엔드포인트
-# ---------------------------------------------------------
+# ── 카카오 오픈빌더 통합 스킬 ──
 
-# 카카오 카드 응답을 만들어주는 헬퍼 함수 (재사용 목적)
-def _build_kakao_card(title: str, description: str):
-    return {
+def kakao_response(text: str, quick_replies: list = None):
+    """오픈빌더 응답 규격 JSON 생성"""
+    body = {
         "version": "2.0",
         "template": {
-            "outputs": [
-                {
-                    "basicCard": {
-                        "title": title,
-                        "description": description,
-                        "buttons": [
-                            {
-                                "action": "message",
-                                "label": "처음으로 돌아가기",
-                                "messageText": "메뉴"
-                            }
-                        ]
-                    }
-                }
-            ]
+            "outputs": [{"simpleText": {"text": text}}]
         }
     }
+    if quick_replies:
+        body["template"]["quickReplies"] = quick_replies
+    return body
 
-# 1. 텍스트 판별용 스킬 서버
-@app.post("/kakao/detect/text")
-async def kakao_detect_text(request: Request):
-    kakao_data = await request.json()
-    
-    # 카카오에서 보낸 발화 내용(사용자가 입력한 텍스트) 추출
-    user_request = kakao_data.get("userRequest", {})
-    user_text = user_request.get("utterance", "")
 
-    # 글자 수 체크 (기존 로직과 동일하게 유지)
-    if not user_text or len(user_text.strip()) < 10:
-        return _build_kakao_card("오류", "텍스트가 너무 짧습니다. 10자 이상 입력해주세요.")
+QUICK_REPLY_RESTART = [
+    {
+        "messageText": "텍스트 분석",
+        "action": "message",
+        "label": "📝 텍스트 분석"
+    },
+    {
+        "messageText": "이미지 분석",
+        "action": "message",
+        "label": "🖼️ 이미지 분석"
+    }
+]
 
-    try:
-        # 기존 AI 엔진(AITextDetector) 실행
-        detector = get_text_detector()
-        raw_result = detector.detect(user_text)
-        
-        # ⭐ 주의: raw_result가 어떤 형태(Dict)로 나오는지에 따라 아래 코드를 수정해야 합니다!
-        # 예시로, raw_result가 {"ai_probability": 85.5, "label": "AI Generated"} 라고 가정했습니다.
-        ai_prob = raw_result.get("ai_probability", 0) # 엔진 결과값 키에 맞춰 수정하세요!
-        
-        description = f"입력하신 텍스트가 AI로 작성되었을 확률은 [{ai_prob}%] 입니다.\n\n▶ 원문: {user_text[:15]}..."
-        
-        # 카카오 규격으로 리턴
-        return _build_kakao_card("💡 텍스트 판별 결과", description)
 
-    except Exception as e:
-        print(f"Kakao Text detection failed: {e}")
-        return _build_kakao_card("오류 발생", "서버 분석 중 오류가 발생했습니다.")
-    
-@app.post("/kakao/detect/image")
-async def kakao_detect_image(request: Request):
-    kakao_data = await request.json()
-    
-    try:
-        # 1. 카카오가 보낸 데이터에서 '이미지 URL' 추출
-        # 카카오는 이미지를 'secureUrls'라는 곳에 담아 보냅니다.
-        action = kakao_data.get("action", {})
-        detail_params = action.get("detailParams", {})
-        
-        # 'secureimage' 부분은 카카오 오픈빌더 파라미터 설정에 따라 다를 수 있습니다.
-        # 기본적으로 이미지가 업로드되면 이 키 값에 담깁니다.
-        image_param = detail_params.get("secureimage", {})
-        
-        # 혹시 몰라 utterance(사용자가 보낸 원문)에서도 URL을 찾아봅니다.
-        user_text = kakao_data.get("userRequest", {}).get("utterance", "")
-        
-        image_url = None
-        if "secureUrls" in image_param:
-             image_url = image_param["secureUrls"]
-        elif user_text.startswith("http"):
-             image_url = user_text
+@app.post("/kakao/detect")
+async def kakao_detect(req: Request):
+    body = await req.json()
 
-        # 이미지가 제대로 안 들어왔을 경우
-        if not image_url:
-            return _build_kakao_card("오류", "이미지 URL을 찾을 수 없습니다. 정상적인 이미지 파일인지 확인해 주세요.")
+    utterance = body.get("userRequest", {}).get("utterance", "").strip()
+    params = body.get("action", {}).get("params", {})
 
-        # 2. 이미지 URL에서 실제 이미지 파일 다운로드 (비동기 처리)
-        async with aiohttp.ClientSession() as session:
-            async with session.get(image_url) as resp:
-                if resp.status != 200:
-                     return _build_kakao_card("다운로드 실패", "카카오 서버에서 이미지를 가져오지 못했습니다.")
-                
-                # 이미지를 바이트 형태로 읽어옴
-                image_bytes = await resp.read()
+    # 이미지 파라미터 확인
+    secure_image = params.get("secureimage", "")
 
-        # 3. 기존 AI 엔진(predict_image) 실행
-        # (models_dict는 기존 코드 상단에 로드되어 있다고 가정합니다)
-        raw_result = predict_image(image_bytes, models_dict)
-        
-        # ⭐ 주의: raw_result 딕셔너리의 Key 값에 맞춰 수정하세요!
-        # 기존 로직이 어떤 값을 뱉는지 몰라 임의로 get()을 사용했습니다.
-        predicted_label = raw_result.get("predicted_label", "판별 불가")
-        predicted_probability = raw_result.get("predicted_probability", 0)
-        
-        # 확률값을 퍼센트로 변환 (예: 0.85 -> 85%)
-        ai_prob_percent = int(float(predicted_probability) * 100)
+    # ── 이미지 판독 ──
+    if secure_image:
+        try:
+            async with httpx.AsyncClient() as client:
+                img_resp = await client.get(secure_image, timeout=15)
+            result = predict_image(img_resp.content, models_dict)
 
-        description = f"💡 분석 결과: {predicted_label}\n\n해당 이미지가 AI로 생성되었을 확률은 [{ai_prob_percent}%] 입니다."
-        
-        # 카카오 규격으로 리턴
-        return _build_kakao_card("🖼️ 이미지 판별 결과", description)
+            label = result.get("predicted_label", "알 수 없음")
+            prob = result.get("predicted_probability", 0)
 
-    except Exception as e:
-        print(f"Kakao Image detection failed: {e}")
-        return _build_kakao_card("오류 발생", f"이미지 분석 중 오류가 발생했습니다. ({e})")
+            # 생성 모델 정보가 있으면 추가
+            generator = result.get("selected_generator_model", "")
+            generator_text = f"\n생성 모델 추정: {generator}" if generator else ""
+
+            text = (
+                f"🖼️ 이미지 판독 결과\n\n"
+                f"판정: {label}\n"
+                f"확률: {prob:.1%}"
+                f"{generator_text}\n\n"
+                f"다른 콘텐츠도 판별해 보시겠어요?"
+            )
+            return kakao_response(text, QUICK_REPLY_RESTART)
+
+        except Exception as e:
+            print(f"Kakao image detection error: {e}")
+            return kakao_response("이미지 판독 중 오류가 발생했습니다. 다시 시도해 주세요.", QUICK_REPLY_RESTART)
+
+    # ── 텍스트 판독 ──
+    if len(utterance) >= 10:
+        try:
+            detector = get_text_detector()
+            result = detector.detect(utterance)
+
+            prob = result.get("final_ai_prob", 0)
+            label = "AI가 작성했을 가능성이 높습니다!" if prob > 60 else "사람이 작성했을 가능성이 높습니다."
+
+            text = (
+                f"📝 텍스트 판독 결과\n\n"
+                f"판정: {label}\n"
+                f"확률: {prob}%\n\n"
+                f"다른 콘텐츠도 판별해 보시겠어요?"
+            )
+            return kakao_response(text, QUICK_REPLY_RESTART)
+
+        except Exception as e:
+            print(f"Kakao text detection error: {e}")
+            return kakao_response("텍스트 판독 중 오류가 발생했습니다. 다시 시도해 주세요.", QUICK_REPLY_RESTART)
+
+    # ── 안내 메시지 ──
+    return kakao_response("분석할 텍스트(10자 이상) 또는 이미지를 보내주세요.")
 
 if __name__ == "__main__":
     import uvicorn

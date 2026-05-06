@@ -29,7 +29,7 @@ async def predict_video(file, models_dict):
             continue
 
         image_bytes = buffer.tobytes()
-        result = predict_image(image_bytes, models_dict)
+        result = predict_image(image_bytes, models_dict, mode="video")
         predictions.append(max(result["probs"].values()))
 
     if not predictions:
