@@ -106,6 +106,7 @@ async def detect_text(request: TextRequest):
     
     
 from fastapi import Request # 파일 상단 import 부분에 추가해주세요
+import aiohttp # 파일 상단 import 부분에 추가해주세요
 
 # ---------------------------------------------------------
 # [추가할 부분] 카카오톡 챗봇 전용 API 엔드포인트
@@ -164,6 +165,63 @@ async def kakao_detect_text(request: Request):
     except Exception as e:
         print(f"Kakao Text detection failed: {e}")
         return _build_kakao_card("오류 발생", "서버 분석 중 오류가 발생했습니다.")
+    
+@app.post("/kakao/detect/image")
+async def kakao_detect_image(request: Request):
+    kakao_data = await request.json()
+    
+    try:
+        # 1. 카카오가 보낸 데이터에서 '이미지 URL' 추출
+        # 카카오는 이미지를 'secureUrls'라는 곳에 담아 보냅니다.
+        action = kakao_data.get("action", {})
+        detail_params = action.get("detailParams", {})
+        
+        # 'secureimage' 부분은 카카오 오픈빌더 파라미터 설정에 따라 다를 수 있습니다.
+        # 기본적으로 이미지가 업로드되면 이 키 값에 담깁니다.
+        image_param = detail_params.get("secureimage", {})
+        
+        # 혹시 몰라 utterance(사용자가 보낸 원문)에서도 URL을 찾아봅니다.
+        user_text = kakao_data.get("userRequest", {}).get("utterance", "")
+        
+        image_url = None
+        if "secureUrls" in image_param:
+             image_url = image_param["secureUrls"]
+        elif user_text.startswith("http"):
+             image_url = user_text
+
+        # 이미지가 제대로 안 들어왔을 경우
+        if not image_url:
+            return _build_kakao_card("오류", "이미지 URL을 찾을 수 없습니다. 정상적인 이미지 파일인지 확인해 주세요.")
+
+        # 2. 이미지 URL에서 실제 이미지 파일 다운로드 (비동기 처리)
+        async with aiohttp.ClientSession() as session:
+            async with session.get(image_url) as resp:
+                if resp.status != 200:
+                     return _build_kakao_card("다운로드 실패", "카카오 서버에서 이미지를 가져오지 못했습니다.")
+                
+                # 이미지를 바이트 형태로 읽어옴
+                image_bytes = await resp.read()
+
+        # 3. 기존 AI 엔진(predict_image) 실행
+        # (models_dict는 기존 코드 상단에 로드되어 있다고 가정합니다)
+        raw_result = predict_image(image_bytes, models_dict)
+        
+        # ⭐ 주의: raw_result 딕셔너리의 Key 값에 맞춰 수정하세요!
+        # 기존 로직이 어떤 값을 뱉는지 몰라 임의로 get()을 사용했습니다.
+        predicted_label = raw_result.get("predicted_label", "판별 불가")
+        predicted_probability = raw_result.get("predicted_probability", 0)
+        
+        # 확률값을 퍼센트로 변환 (예: 0.85 -> 85%)
+        ai_prob_percent = int(float(predicted_probability) * 100)
+
+        description = f"💡 분석 결과: {predicted_label}\n\n해당 이미지가 AI로 생성되었을 확률은 [{ai_prob_percent}%] 입니다."
+        
+        # 카카오 규격으로 리턴
+        return _build_kakao_card("🖼️ 이미지 판별 결과", description)
+
+    except Exception as e:
+        print(f"Kakao Image detection failed: {e}")
+        return _build_kakao_card("오류 발생", f"이미지 분석 중 오류가 발생했습니다. ({e})")
 
 if __name__ == "__main__":
     import uvicorn
