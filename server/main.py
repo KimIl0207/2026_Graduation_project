@@ -184,7 +184,7 @@ async def kakao_detect(req: Request):
             text = (
                 f"📝 텍스트 판독 결과\n\n"
                 f"판정: {label}\n"
-                f"확률: {prob}%\n\n"
+                f"확률: {prob:2f}%\n\n"
                 f"다른 콘텐츠도 판별해 보시겠어요?"
             )
             return kakao_response(text, QUICK_REPLY_RESTART)
