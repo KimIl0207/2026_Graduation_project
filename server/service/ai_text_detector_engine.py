@@ -1,225 +1,505 @@
-import torch
-import numpy as np
-import nltk
-import re
 import os
-from transformers import AutoTokenizer, AutoModelForSequenceClassification, AutoModelForCausalLM
+import re
+import json
+import torch
+import nltk
+import numpy as np
 import torch.nn.functional as F
-from dotenv import load_dotenv
 
-# .env 파일이 있으면 환경 변수를 로드합니다.
+from dotenv import load_dotenv
+from kiwipiepy import Kiwi
+
+from transformers import (
+    AutoTokenizer,
+    AutoModelForSequenceClassification,
+    AutoModelForCausalLM,
+)
+
+# ==========================================
+# ENV
+# ==========================================
+
 load_dotenv()
+
+# ==========================================
+# AI Detector
+# ==========================================
+
 
 class AITextDetector:
     def __init__(self, model_path="seongwoo02/ai_text_detector", token=None):
-        """
-        AI 텍스트 탐지기 엔진 초기화
-        :param model_path: 학습된 모델 경로 (로컬 또는 허깅페이스)
-        :param token: 허깅페이스 Private 모델 접근용 토큰 (None이면 환경 변수 HF_TOKEN 사용)
-        """
+        print("개선된 Hybrid AI Detector 엔진을 가동합니다...\n")
+
+        # ======================================
+        # Device
+        # ======================================
+
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
         print(f"⚡ 현재 연산 장치: {self.device}")
 
-        nltk.download('punkt', quiet=True)
-        nltk.download('punkt_tab', quiet=True)
+        # ======================================
+        # NLTK
+        # ======================================
 
-        # 매개변수로 토큰이 없으면 환경 변수에서 시도
+        nltk.download("punkt", quiet=True)
+        nltk.download("punkt_tab", quiet=True)
+
+        # ======================================
+        # Kiwi
+        # ======================================
+
+        self.kiwi = Kiwi()
+
+        # ======================================
+        # HuggingFace Token
+        # ======================================
+
         if token is None:
             token = os.getenv("HF_TOKEN")
 
-        # [1] 허깅페이스 또는 로컬에서 모델 로드
-        print(f"📂 탐지 모델 로드 중... ({model_path})")
+        # ======================================
+        # Threshold Load
+        # ======================================
+
         try:
-            self.roberta_tokenizer = AutoTokenizer.from_pretrained(model_path, token=token)
-            self.roberta_model = AutoModelForSequenceClassification.from_pretrained(model_path, token=token).to(self.device)
+
+            with open("thresholds.json", "r", encoding="utf-8") as f:
+
+                thresholds = json.load(f)
+
+            self.THRESH_BURST_KO = thresholds["THRESH_BURST_KO"]
+            self.THRESH_BURST_EN = thresholds["THRESH_BURST_EN"]
+
+            self.THRESH_KO_PPL = thresholds["THRESH_KO_PPL"]
+            self.THRESH_EN_PPL = thresholds["THRESH_EN_PPL"]
+
+            print("✅ thresholds.json 로드 완료")
+
         except Exception as e:
+
+            print("⚠️ threshold 파일 없음 → 기본값 사용")
+
+            self.THRESH_BURST_KO = 16.8
+            self.THRESH_BURST_EN = 6.9
+
+            self.THRESH_KO_PPL = 54.2
+            self.THRESH_EN_PPL = 17.8
+
+        # ======================================
+        # Load XLM-R
+        # ======================================
+
+        print(f"\n🤖 XLM-RoBERTa 탐지 모델 로드 중... ({model_path})")
+
+        try:
+
+            self.roberta_tokenizer = AutoTokenizer.from_pretrained(
+                model_path, token=token
+            )
+
+            self.roberta_model = AutoModelForSequenceClassification.from_pretrained(
+                model_path, token=token
+            ).to(self.device)
+
+        except Exception as e:
+
             print(f"⚠️ 모델 로드 실패: {e}")
-            print("💡 기본 xlm-roberta-base 모델을 로드합니다.")
+            print("💡 기본 xlm-roberta-base 모델 사용")
+
             self.roberta_tokenizer = AutoTokenizer.from_pretrained("xlm-roberta-base")
-            self.roberta_model = AutoModelForSequenceClassification.from_pretrained("xlm-roberta-base", num_labels=2).to(self.device)
-        
+
+            self.roberta_model = AutoModelForSequenceClassification.from_pretrained(
+                "xlm-roberta-base", num_labels=2
+            ).to(self.device)
+
         self.roberta_model.eval()
 
-        # [2] 통계 분석용 퍼플렉서티(PPL) 보조 모델 로드
-        print("🇰🇷 한국어 PPL 보조 모델(KoGPT2) 로드 중...")
+        # ======================================
+        # Load PPL Models
+        # ======================================
+
+        print("\n🇰🇷 KoGPT2 PPL 모델 로드 중...")
+
         self.ko_ppl_tokenizer = AutoTokenizer.from_pretrained("skt/kogpt2-base-v2")
-        self.ko_ppl_model = AutoModelForCausalLM.from_pretrained("skt/kogpt2-base-v2").to(self.device).eval()
 
-        print("🇺🇸 영어 PPL 보조 모델(GPT-2) 로드 중...")
+        self.ko_ppl_model = (
+            AutoModelForCausalLM.from_pretrained("skt/kogpt2-base-v2")
+            .to(self.device)
+            .eval()
+        )
+
+        print("🇺🇸 GPT2 PPL 모델 로드 중...")
+
         self.en_ppl_tokenizer = AutoTokenizer.from_pretrained("gpt2")
-        self.en_ppl_model = AutoModelForCausalLM.from_pretrained("gpt2").to(self.device).eval()
 
-        # 임계값(Threshold) 설정
-        self.THRESH_BURST = 11.03
-        self.THRESH_KO_PPL = 500.0
-        self.THRESH_EN_PPL = 55.82
+        self.en_ppl_model = (
+            AutoModelForCausalLM.from_pretrained("gpt2").to(self.device).eval()
+        )
 
-        print("✅ 모든 모델 및 설정 로드 완료!\n")
+        print("✅ 모든 모델 로드 완료!\n")
+
+    # ==========================================
+    # Utils
+    # ==========================================
 
     def _detect_language_per_sentence(self, sentence):
-        """문장 단위 언어 판별 (한국어 vs 영어)"""
-        words = sentence.split()
-        ko_word_count = 0
-        en_word_count = 0
+        ko_count = len(re.findall(r"[가-힣]", sentence))
+        en_count = len(re.findall(r"[a-zA-Z]", sentence))
 
-        for word in words:
-            if re.search(r'[가-힣]', word):
-                ko_word_count += 1
-            elif re.search(r'[a-zA-Z]', word):
-                en_word_count += 1
+        return "ko" if ko_count >= en_count else "en"
 
-        return 'en' if en_word_count > ko_word_count else 'ko'
+    def _split_sentences(self, text):
+        try:
+            sents = self.kiwi.split_into_sents(text)
+            return [s.text.strip() for s in sents if len(s.text.strip()) > 0]
 
-    def detect(self, text):
-        """
-        텍스트가 AI에 의해 작성되었는지 하이브리드 방식으로 탐지합니다.
-        """
-        if len(text.strip()) < 10:
-            return {"error": "텍스트가 너무 짧아 정확한 분석이 어렵습니다."}
+        except:
+            try:
+                return nltk.sent_tokenize(text)
 
-        results = {}
+            except:
+                return [text]
 
-        # --- [검사 1] XLM-RoBERTa 딥러닝 문맥 분석 ---
-        inputs = self.roberta_tokenizer(text, return_tensors="pt", truncation=True, max_length=256).to(self.device)
-        with torch.no_grad():
-            outputs = self.roberta_model(**inputs)
-            probs = F.softmax(outputs.logits, dim=-1).squeeze().tolist()
-        ai_prob = probs[1] * 100
-        results['roberta_ai_prob'] = ai_prob
+    def _get_sentence_length(self, sentence, lang):
+        try:
+            if lang == "ko":
+                tokens = self.kiwi.tokenize(sentence)
 
-        # --- [검사 2] 문장 길이 변동성(Burstiness) ---
-        sentences = nltk.sent_tokenize(text)
-        if len(sentences) > 1:
-            sentence_lengths = [len(nltk.word_tokenize(sentence)) for sentence in sentences]
-            burstiness_score = np.std(sentence_lengths)
-        else:
-            burstiness_score = 0.0
-        results['burstiness'] = burstiness_score
+                return len(tokens)
 
-        # --- [검사 3] 문장별 당혹성(Perplexity, PPL) 계산 ---
-        ko_ppl_scores = []
-        en_ppl_scores = []
+            else:
+                return len(sentence.split())
+
+        except:
+            return len(sentence.split())
+
+    def _get_burstiness(self, sentences):
+        if len(sentences) <= 1:
+            return 0.0
+
+        lengths = []
 
         for sentence in sentences:
-            if len(sentence.strip()) < 3:
+
+            if len(sentence.strip()) == 0:
                 continue
 
             lang = self._detect_language_per_sentence(sentence)
 
-            if lang == 'ko':
-                ppl_inputs = self.ko_ppl_tokenizer(sentence, return_tensors="pt")
-                input_ids = ppl_inputs["input_ids"][:, :512].to(self.device)
-                with torch.no_grad():
-                    loss = self.ko_ppl_model(input_ids, labels=input_ids).loss
-                ko_ppl_scores.append(torch.exp(loss).item())
-            else:
-                ppl_inputs = self.en_ppl_tokenizer(sentence, return_tensors="pt")
-                input_ids = ppl_inputs["input_ids"][:, :512].to(self.device)
-                with torch.no_grad():
-                    loss = self.en_ppl_model(input_ids, labels=input_ids).loss
-                en_ppl_scores.append(torch.exp(loss).item())
+            sent_len = self._get_sentence_length(sentence, lang)
 
-        avg_ko_ppl = np.mean(ko_ppl_scores) if ko_ppl_scores else 0.0
-        avg_en_ppl = np.mean(en_ppl_scores) if en_ppl_scores else 0.0
+            lengths.append(sent_len)
 
-        results['ko_perplexity'] = avg_ko_ppl
-        results['en_perplexity'] = avg_en_ppl
+        if len(lengths) <= 1:
+            return 0.0
 
-        # --- [⚖️ 하이브리드 점수 조정 로직] ---
-        final_score = ai_prob
+        return float(np.std(lengths))
 
-        # 1. 변동성(Burstiness) 보정
-        burst_adj = 0.0
-        if burstiness_score < self.THRESH_BURST:
-            gap_ratio = (self.THRESH_BURST - burstiness_score) / self.THRESH_BURST
-            burst_adj = 10 + (25 * gap_ratio)
+    def _get_perplexity(self, text, model, tokenizer):
+        try:
+            inputs = tokenizer(
+                text, return_tensors="pt", truncation=True, max_length=512
+            )
+
+            input_ids = inputs["input_ids"].to(self.device)
+
+            if input_ids.shape[1] < 2:
+                return 0.0
+
+            with torch.no_grad():
+                outputs = model(input_ids, labels=input_ids)
+                loss = outputs.loss
+
+            ppl = torch.exp(loss).item()
+
+            if np.isnan(ppl):
+                return 0.0
+
+            if np.isinf(ppl):
+                return 0.0
+
+            return float(ppl)
+
+        except:
+            return 0.0
+
+    def _normalize_score(self, value, threshold):
+        if value <= 0:
+            return 50.0
+
+        ratio = value / threshold
+
+        # threshold보다 낮으면 AI 가능성 ↑
+        if ratio < 1.0:
+            score = 100 - (ratio * 50)
+
         else:
-            bonus_ratio = min((burstiness_score - self.THRESH_BURST) / self.THRESH_BURST, 1.0)
-            burst_adj = -(10 * bonus_ratio)
-        
-        final_score += burst_adj
-        results['burst_adj'] = burst_adj
+            score = max(0, 50 - ((ratio - 1.0) * 50))
 
-        # 2. 당혹성(Perplexity) 보정
-        ppl_penalty = 0
-        ko_ppl_adj = 0.0
-        en_ppl_adj = 0.0
-        evaluated_langs = 0
+        return float(score)
 
-        if avg_ko_ppl > 0:
-            if avg_ko_ppl < self.THRESH_KO_PPL:
-                gap_ratio = (self.THRESH_KO_PPL - avg_ko_ppl) / self.THRESH_KO_PPL
-                ko_ppl_adj = 10 + (25 * gap_ratio)
+    # ==========================================
+    # Main Detector
+    # ==========================================
+
+    def detect(self, text):
+        text = text.strip()
+
+        if len(text) < 10:
+            return {"error": "텍스트가 너무 짧습니다."}
+
+        results = {}
+
+        # ======================================
+        # Sentence Split
+        # ======================================
+
+        sentences = self._split_sentences(text)
+
+        # ======================================
+        # Main Language
+        # ======================================
+
+        ko_count = 0
+        en_count = 0
+
+        for s in sentences:
+            lang = self._detect_language_per_sentence(s)
+
+            if lang == "ko":
+                ko_count += 1
             else:
-                bonus_ratio = min((avg_ko_ppl - self.THRESH_KO_PPL) / self.THRESH_KO_PPL, 1.0)
-                ko_ppl_adj = -(10 * bonus_ratio)
-            ppl_penalty += ko_ppl_adj
-            evaluated_langs += 1
+                en_count += 1
 
-        if avg_en_ppl > 0:
-            if avg_en_ppl < self.THRESH_EN_PPL:
-                gap_ratio = (self.THRESH_EN_PPL - avg_en_ppl) / self.THRESH_EN_PPL
-                en_ppl_adj = 10 + (25 * gap_ratio)
+        main_lang = "ko" if ko_count >= en_count else "en"
+
+        results["language"] = main_lang
+
+        # ======================================
+        # XLM-R
+        # ======================================
+
+        inputs = self.roberta_tokenizer(
+            text, return_tensors="pt", truncation=True, max_length=256
+        ).to(self.device)
+
+        with torch.no_grad():
+            outputs = self.roberta_model(**inputs)
+
+            probs = F.softmax(outputs.logits, dim=-1).squeeze()
+
+        ai_prob = float(probs[1].item() * 100)
+
+        results["roberta_ai_prob"] = ai_prob
+
+        # ======================================
+        # EXTREME SHORTCUT ONLY
+        # ======================================
+
+        if ai_prob >= 99.5:
+            results["final_ai_prob"] = ai_prob
+            results["decision"] = "AI"
+
+            return results
+
+        if ai_prob <= 0.5:
+            results["final_ai_prob"] = ai_prob
+            results["decision"] = "Human"
+
+            return results
+
+        # ======================================
+        # Burstiness
+        # ======================================
+
+        burstiness_score = self._get_burstiness(sentences)
+
+        results["burstiness"] = burstiness_score
+
+        # ======================================
+        # Sentence-level PPL
+        # ======================================
+
+        ppl_scores = []
+
+        for sentence in sentences:
+            if len(sentence.strip()) < 5:
+                continue
+
+            lang = self._detect_language_per_sentence(sentence)
+
+            if lang == "ko":
+                ppl = self._get_perplexity(
+                    sentence, self.ko_ppl_model, self.ko_ppl_tokenizer
+                )
+
             else:
-                bonus_ratio = min((avg_en_ppl - self.THRESH_EN_PPL) / self.THRESH_EN_PPL, 1.0)
-                en_ppl_adj = -(10 * bonus_ratio)
-            ppl_penalty += en_ppl_adj
-            evaluated_langs += 1
+                ppl = self._get_perplexity(
+                    sentence, self.en_ppl_model, self.en_ppl_tokenizer
+                )
 
-        if evaluated_langs > 0:
-            final_score += (ppl_penalty / evaluated_langs)
+            if ppl > 0:
+                ppl_scores.append(ppl)
 
-        results['ko_ppl_adj'] = ko_ppl_adj
-        results['en_ppl_adj'] = en_ppl_adj
-        results['final_ai_prob'] = max(min(final_score, 100.0), 0.0)
+        avg_ppl = float(np.mean(ppl_scores)) if len(ppl_scores) > 0 else 0.0
 
-        detected_langs = []
-        if avg_ko_ppl > 0: detected_langs.append("한국어")
-        if avg_en_ppl > 0: detected_langs.append("영어")
-        results['language'] = " + ".join(detected_langs)
+        results["perplexity"] = avg_ppl
+
+        # ======================================
+        # Threshold Selection
+        # ======================================
+
+        if main_lang == "ko":
+            burst_threshold = self.THRESH_BURST_KO
+            ppl_threshold = self.THRESH_KO_PPL
+
+        else:
+            burst_threshold = self.THRESH_BURST_EN
+            ppl_threshold = self.THRESH_EN_PPL
+
+        # ======================================
+        # Statistical Scores
+        # ======================================
+
+        burst_score = self._normalize_score(burstiness_score, burst_threshold)
+
+        ppl_score = self._normalize_score(avg_ppl, ppl_threshold)
+
+        results["burst_score"] = burst_score
+        results["ppl_score"] = ppl_score
+
+        # ======================================
+        # Ensemble Weighting
+        # ======================================
+
+        final_score = (ai_prob * 0.85) + (burst_score * 0.075) + (ppl_score * 0.075)
+
+        final_score = max(min(final_score, 100.0), 0.0)
+
+        results["final_ai_prob"] = final_score
+
+        # ======================================
+        # Final Decision
+        # ======================================
+
+        if final_score >= 70:
+            decision = "AI"
+        elif final_score <= 30:
+            decision = "Human"
+        else:
+            decision = "Uncertain"
+
+        results["decision"] = decision
 
         return results
 
+
+# ==========================================
+# Report
+# ==========================================
+
+
 def print_report(text, report):
-    """분석 결과를 깔끔하게 출력합니다."""
+
     if "error" in report:
         print(f"❌ 오류: {report['error']}")
+
         return
 
-    print("==================================================")
-    print("               📊 AI 탐지 분석 리포트              ")
-    print("==================================================")
-    print(f"\n[입력 텍스트 요약]\n{text[:150].strip()}...")
-    print(f"\n🌍 감지된 언어 : {report['language']}")
-    print(f"🤖 딥러닝 문맥 예측 확률 : {report['roberta_ai_prob']:.1f}%")
-    
-    print(f"📏 문장 길이 변동성(Burstiness): {report['burstiness']:.2f}")
-    print(f"   보정치: {report['burst_adj']:+.1f}%p")
+    print("=" * 60)
+    print("📊 Hybrid AI Detector Report")
+    print("=" * 60)
 
-    if report['ko_perplexity'] > 0:
-        print(f"🇰🇷 한국어 당혹성(PPL): {report['ko_perplexity']:.2f}")
-        print(f"   보정치: {report['ko_ppl_adj']:+.1f}%p")
+    print("\n[입력 문장]")
+    print(text.strip())
 
-    if report['en_perplexity'] > 0:
-        print(f"🇺🇸 영어 당혹성(PPL): {report['en_perplexity']:.2f}")
-        print(f"   보정치: {report['en_ppl_adj']:+.1f}%p")
-    
-    print("--------------------------------------------------")
-    if report['final_ai_prob'] > 60:
-        print(f"🚨 판별 결과: AI가 작성했을 확률이 매우 높습니다! (확률: {report['final_ai_prob']:.1f}%)")
+    print("\n🌍 [언어 분석]")
+    print(f"감지 언어: {report['language']}")
+
+    print("\n🤖 [XLM-RoBERTa 딥러닝 판별]")
+    print(f"AI 확률: " f"{report['roberta_ai_prob']:.2f}%")
+
+    # ======================================
+    # Burstiness
+    # ======================================
+
+    if "burstiness" in report:
+        print("\n📝 [Burstiness 분석]")
+        print(f"문장 길이 변동성: " f"{report['burstiness']:.4f}")
+        print(f"정규화 점수: " f"{report['burst_score']:.2f}")
+
     else:
-        print(f"✅ 판별 결과: 사람이 작성했을 가능성이 높습니다. (AI 확률: {report['final_ai_prob']:.1f}%)")
-    print("==================================================\n")
+
+        print("\n📝 [Burstiness 분석]")
+        print("Skipped (Extreme Shortcut)")
+
+    # ======================================
+    # PPL
+    # ======================================
+
+    if "perplexity" in report:
+        print("\n📚 [Perplexity 분석]")
+        print(f"PPL 점수: " f"{report['perplexity']:.4f}")
+        print(f"정규화 점수: " f"{report['ppl_score']:.2f}")
+
+    else:
+        print("\n📚 [Perplexity 분석]")
+        print("Skipped (Extreme Shortcut)")
+
+    # ======================================
+    # Final
+    # ======================================
+
+    final_prob = report["final_ai_prob"]
+
+    print("\n" + "-" * 60)
+    print(f"🎯 최종 AI 확률 : " f"{final_prob:.2f}%")
+
+    if final_prob >= 85:
+        verdict = "🚨 매우 높은 확률로 AI 생성 텍스트"
+    elif final_prob >= 70:
+        verdict = "⚠️ AI 생성 가능성이 높음"
+    elif final_prob >= 55:
+        verdict = "🟡 AI와 사람 특성이 혼합됨"
+    elif final_prob >= 40:
+        verdict = "🟢 사람 작성 가능성이 높음"
+    else:
+        verdict = "✅ 매우 높은 확률로 사람 작성 텍스트"
+
+    print(f"📌 최종 판정 : {verdict}")
+
+    # ======================================
+    # Internal Log
+    # ======================================
+
+    print("\n🧠 [내부 점수 로그]")
+
+    print(f"RoBERTa Base Score : " f"{report['roberta_ai_prob']:.2f}")
+
+    if "burst_score" in report:
+        print(f"Burstiness Score   : " f"{report['burst_score']:.2f}")
+    else:
+        print("Burstiness Score   : Skipped")
+    if "ppl_score" in report:
+        print(f"PPL Score          : " f"{report['ppl_score']:.2f}")
+    else:
+        print("PPL Score          : Skipped")
+
+    print("=" * 60)
+
+
+# ==========================================
+# Run
+# ==========================================
 
 if __name__ == "__main__":
-    # 사용 예시 (기본적으로 허깅페이스 Private 모델을 로드합니다)
     detector = AITextDetector()
     
     test_text = """
-    인공지능(AI)은 현대 사회의 다양한 분야에서 혁신을 일으키고 있습니다. 
-    기계 학습과 딥러닝 기술의 발전으로 인해 AI는 이제 인간의 언어를 이해하고 생성하며, 
-    복잡한 문제를 해결하는 데 있어 놀라운 능력을 보여주고 있습니다.
+    인공지능은 최근 다양한 산업 분야에서 빠르게 활용되고 있다.
+    특히 자연어 처리와 생성형 AI 기술은 인간 수준의 텍스트 생성 능력을 보여주고 있다.
     """
-    
-    result = detector.detect(test_text)
-    print_report(test_text, result)
+    report = detector.detect(test_text)
+
+    print_report(test_text, report)

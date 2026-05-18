@@ -4,9 +4,12 @@ torchvision
 transformers
 numpy
 nltk
+kiwipiepy
 huggingface_hub
 pillow
 opencv-python
+scikit-learn
+tqdm
 
 # API Server Dependencies
 fastapi
