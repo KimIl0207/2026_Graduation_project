@@ -30,3 +30,7 @@ ngrok.exe
 /mobile/.externalNativeBuild
 /mobile/.cxx
 /mobile/local.properties
+/server/util/datasets
+/server/util/data_loader.py
+/server/util/image_list.csv
+/server/util/.frame_cache

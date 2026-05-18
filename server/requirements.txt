@@ -4,13 +4,18 @@ torchvision
 transformers
 numpy
 nltk
+kiwipiepy
 huggingface_hub
 pillow
+scikit-learn
+tqdm
+opencv-python-headless
 
 # API Server Dependencies
 fastapi
 uvicorn
 pydantic
+httpx
 requests
 python-dotenv
 python-multipart
