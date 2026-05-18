@@ -40,6 +40,7 @@ def _cache_key(
     samples_per_second: SampleRate,
     seed: int | None,
     color_format: ColorFormat,
+    max_duration_seconds: float | None,
 ) -> str:
     stat = video_path.stat()
     payload = {
@@ -47,6 +48,7 @@ def _cache_key(
         "size": stat.st_size,
         "mtime_ns": stat.st_mtime_ns,
         "samples_per_second": samples_per_second,
+        "max_duration_seconds": max_duration_seconds,
         "seed": seed,
         "color_format": color_format,
     }
@@ -93,13 +95,20 @@ def _pick_frame_indices(
     fps: float,
     samples_per_second: SampleRate,
     rng: random.Random,
+    max_duration_seconds: float | None = None,
 ) -> list[int]:
     duration_seconds = frame_count / fps
+    if max_duration_seconds is not None:
+        if max_duration_seconds <= 0:
+            raise ValueError("max_duration_seconds must be greater than 0.")
+        duration_seconds = min(duration_seconds, max_duration_seconds)
+
+    max_frame_count = min(frame_count, int(math.ceil(duration_seconds * fps)))
     selected_indices: list[int] = []
 
     for second in range(math.ceil(duration_seconds)):
         start_frame = int(second * fps)
-        end_frame = min(int((second + 1) * fps), frame_count)
+        end_frame = min(int((second + 1) * fps), max_frame_count)
         if start_frame >= end_frame:
             continue
 
@@ -122,6 +131,7 @@ def extract_random_frames(
     video_path: str | Path,
     samples_per_second: SampleRate = 1,
     *,
+    max_duration_seconds: float | None = 5,
     cache_dir: str | Path | None = DEFAULT_CACHE_DIR,
     seed: int | None = None,
     color_format: ColorFormat = "rgb",
@@ -133,6 +143,8 @@ def extract_random_frames(
         video_path: Path to the video file.
         samples_per_second: Number of frames to sample per second. A tuple like
             ``(1, 2)`` randomly picks 1 to 2 frames per second.
+        max_duration_seconds: Only sample frames from the first N seconds.
+            Pass ``None`` to sample from the full video.
         cache_dir: Directory for disk cache. Pass ``None`` to use memory cache only.
         seed: Optional random seed. Use this for reproducible sampling.
         color_format: Return frames as RGB or OpenCV's native BGR.
@@ -156,7 +168,7 @@ def extract_random_frames(
         raise ValueError("color_format must be 'rgb' or 'bgr'.")
 
     normalized_sample_rate = _normalize_sample_rate(samples_per_second)
-    key = _cache_key(path, normalized_sample_rate, seed, color_format)
+    key = _cache_key(path, normalized_sample_rate, seed, color_format, max_duration_seconds)
 
     if not force_refresh and key in _MEMORY_CACHE:
         return _copy_frames(_MEMORY_CACHE[key])
@@ -186,6 +198,7 @@ def extract_random_frames(
             fps,
             normalized_sample_rate,
             rng,
+            max_duration_seconds,
         )
 
         frames: list[np.ndarray] = []

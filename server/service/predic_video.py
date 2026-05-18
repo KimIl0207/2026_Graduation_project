@@ -14,7 +14,7 @@ async def predict_video(file, models_dict):
             temp_path = temp_file.name
             temp_file.write(await file.read())
 
-        frames = extract_random_frames(temp_path, color_format="bgr")
+        frames = extract_random_frames(temp_path, color_format="bgr", samples_per_second=(1,2), max_duration_seconds=5)
     finally:
         if temp_path and os.path.exists(temp_path):
             os.unlink(temp_path)

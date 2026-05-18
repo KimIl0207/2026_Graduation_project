@@ -85,6 +85,13 @@ def predict_image(image_bytes, models_dict, mode="image"):
         "grad_cam": grad_cam,
     }
 
+def predict_images(image_bytes_list, models_dict):
+    results = []
+    for image_bytes in image_bytes_list:
+        result = predict_image(image_bytes, models_dict)
+        results.append(result["probability"])
+    return sum(results) / len(results) if results else 0.0
+
 
 def generate_grad_cam(image, input_tensor, model, model_key):
     """EfficientNet-B0의 마지막 feature map으로 Grad-CAM heatmap overlay를 만든다."""

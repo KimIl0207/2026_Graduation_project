@@ -1,8 +1,8 @@
-import httpx
+import os
 from typing import Optional
+from urllib.parse import urlparse
 
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Request
-import os
 
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -10,8 +10,16 @@ from pydantic import BaseModel
 from util.save_correction import save_correction_file
 from service.ai_text_detector_engine import AITextDetector
 from service.model_loader import load_models
-from service.predict import predict_image
+from service.predict import predict_image, predict_images
 from service.predic_video import predict_video as predict_video_file
+from util.kakao import (
+    kakao_response,
+    find_image_url,
+    find_video_url,
+    download_image_bytes,
+    download_video_bytes,
+    QUICK_REPLY_RESTART,
+)
 
 app = FastAPI(
     title="AI Detection API",
@@ -41,6 +49,15 @@ class TextRequest(BaseModel):
     text: str
 
 
+class InMemoryUploadFile:
+    def __init__(self, content: bytes, filename: str):
+        self._content = content
+        self.filename = filename
+
+    async def read(self) -> bytes:
+        return self._content
+
+
 def get_text_detector():
     global text_detector
 
@@ -66,6 +83,20 @@ async def predict(file: UploadFile = File(...)):
 async def predict_video(file: UploadFile = File(...)):
     result = await predict_video_file(file, models_dict)
     return result
+
+
+@app.post("/predict_images")
+async def predict_frame_images(files: list[UploadFile] = File(...)):
+    image_bytes_list = [await file.read() for file in files]
+    average_probability = predict_images(image_bytes_list, models_dict)
+    label = "AI Generated Video" if average_probability >= 0.5 else "Real Video"
+
+    return {
+        "label": label,
+        "probability": round(average_probability, 4),
+        "frame_count": len(image_bytes_list),
+    }
+
 
 @app.post("/save-correction")
 async def save_correction(
@@ -104,35 +135,6 @@ async def detect_text(request: TextRequest):
     except Exception as e:
         print(f"Text detection failed: {e}")
         raise HTTPException(status_code=500, detail="Text detection failed.")
-    
-
-# ── 카카오 오픈빌더 통합 스킬 ──
-
-def kakao_response(text: str, quick_replies: list = None):
-    """오픈빌더 응답 규격 JSON 생성"""
-    body = {
-        "version": "2.0",
-        "template": {
-            "outputs": [{"simpleText": {"text": text}}]
-        }
-    }
-    if quick_replies:
-        body["template"]["quickReplies"] = quick_replies
-    return body
-
-
-QUICK_REPLY_RESTART = [
-    {
-        "messageText": "텍스트 분석",
-        "action": "message",
-        "label": "📝 텍스트 분석"
-    },
-    {
-        "messageText": "이미지 분석",
-        "action": "message",
-        "label": "🖼️ 이미지 분석"
-    }
-]
 
 
 @app.post("/kakao/detect")
@@ -143,26 +145,56 @@ async def kakao_detect(req: Request):
     params = body.get("action", {}).get("params", {})
 
     # 이미지 파라미터 확인
-    secure_image = params.get("secureimage", "")
+    video_url = find_video_url(params) or find_video_url(utterance)
+    image_url = find_image_url(params) or find_image_url(utterance)
+
+    # print(f"Kakao detect request - Utterance: {utterance}, Params: {params}, Image URL: {image_url}")
 
     # ── 이미지 판독 ──
-    if secure_image:
+    if video_url:
         try:
-            async with httpx.AsyncClient() as client:
-                img_resp = await client.get(secure_image, timeout=15)
-            result = predict_image(img_resp.content, models_dict)
+            video_bytes = await download_video_bytes(video_url)
+            filename = os.path.basename(urlparse(video_url).path) or "uploaded_video.mp4"
+            video_file = InMemoryUploadFile(video_bytes, filename)
+            result = await predict_video_file(video_file, models_dict)
 
-            label = result.get("predicted_label", "알 수 없음")
-            prob = result.get("predicted_probability", 0)
+            if "error" in result:
+                return kakao_response(f"Video detection failed: {result['error']}", QUICK_REPLY_RESTART)
+
+            label = result.get("label", "Unknown")
+            prob = result.get("probability", 0)
+            frame_count = result.get("frame_count", 0)
+
+            text = (
+                "🎞️비디오 판독 결과\n\n"
+                f"판정: {label}\n"
+                f"확률: {prob:.2f}\n"
+                f"분석된 프레임: {frame_count}\n\n"
+                "다른 텍스트, 이미지, 또는 비디오를 보내서 분석해 보세요."
+            )
+            return kakao_response(text, QUICK_REPLY_RESTART)
+
+        except Exception as e:
+            print(f"Kakao video detection error: {e}")
+            return kakao_response("Video detection failed. Please try again.", QUICK_REPLY_RESTART)
+
+    if image_url:
+        try:
+            image_bytes = await download_image_bytes(image_url)
+            # print(f"Downloaded image from {image_url} ({len(image_bytes)} bytes)")
+            result = predict_image(image_bytes, models_dict)
+
+            label = result.get("label", "알 수 없음")
+            prob = result.get("probability", 0)
 
             # 생성 모델 정보가 있으면 추가
-            generator = result.get("selected_generator_model", "")
+            generator = result.get("generator_model", "")
             generator_text = f"\n생성 모델 추정: {generator}" if generator else ""
 
             text = (
                 f"🖼️ 이미지 판독 결과\n\n"
                 f"판정: {label}\n"
-                f"확률: {prob:.1%}"
+                f"확률: {prob:.2f}"
                 f"{generator_text}\n\n"
                 f"다른 콘텐츠도 판별해 보시겠어요?"
             )

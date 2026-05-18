@@ -38,6 +38,16 @@ API server:
 uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
+Docker:
+
+```powershell
+docker build -t ai-detection-server .
+docker run --rm -p 8000:8000 --env-file server/.env ai-detection-server
+```
+
+The Docker image excludes local correction data in `server/corrections/`.
+Use a volume or external storage if correction uploads need to persist in production.
+
 ## Image API
 
 `GET /`
