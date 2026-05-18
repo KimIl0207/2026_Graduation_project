@@ -1,0 +1,149 @@
+/* 1. 드래그 캡처 영역 (격자 무늬 및 스타일 통합) */
+.deepfake-selection-box {
+  position: fixed;
+  border: 2px solid #00d1ff;
+  background-color: rgba(0, 0, 0, 0.2);
+  background-image:
+    linear-gradient(to right, rgba(0, 209, 255, 0.4) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(0, 209, 255, 0.4) 1px, transparent 1px);
+  background-size: 33.33% 33.33%;
+  z-index: 2147483647;
+  pointer-events: none;
+}
+
+.deepfake-selection-box::after {
+  content: "얼굴이 중앙에 오도록 타이트하게 캡처해주세요";
+  position: absolute;
+  bottom: -28px;
+  left: 0;
+  color: white;
+  background-color: #00d1ff;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: bold;
+  white-space: nowrap;
+}
+
+/* 2. 모달창 기본 컨테이너*/
+#deepfake-result-modal {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  width: 320px;
+  /* 창을 조금 더 넓고 안정감 있게 */
+  padding: 24px;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  border-radius: 20px;
+  /* 아이폰 위젯처럼 부드러운 라운딩 */
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1), 0 1px 10px rgba(0, 0, 0, 0.05);
+  z-index: 2147483647;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* 전체 요소를 가운데 정렬 */
+}
+
+/* 제목 영역 */
+.modal-header {
+  font-size: 17px;
+  font-weight: 600;
+  color: #1d1d1f;
+  margin-bottom: 16px;
+  letter-spacing: -0.02em;
+}
+
+/* 캡처된 이미지/비디오 테두리 처리 */
+.modal-media {
+  width: 100%;
+  border-radius: 12px;
+  margin-bottom: 20px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  /* 미디어에 옅은 그림자 추가 */
+  object-fit: cover;
+}
+
+/* 3. 분석 진행률 바 (Progress Bar) */
+.modal-status-text {
+  font-size: 14px;
+  font-weight: 500;
+  color: #1d1d1f;
+  text-align: center;
+  margin-bottom: 8px;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 6px;
+  /* 슬림한 프로그레스 바 */
+  background: rgba(0, 0, 0, 0.08);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 20px;
+}
+
+.progress-fill {
+  width: 0%;
+  height: 100%;
+  background: #007aff;
+  /* Apple Blue */
+  border-radius: 3px;
+  transition: width 0.4s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+/* 에러 메시지 텍스트 */
+.error-msg {
+  color: #ff3b30;
+  /* iOS 기본 레드 컬러 */
+  font-size: 13px;
+  text-align: center;
+  margin-bottom: 16px;
+  line-height: 1.4;
+}
+
+/* 4. 버튼 공통 및 개별 스타일 */
+.btn-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.modal-btn {
+  width: 100%;
+  padding: 13px;
+  border: none;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-sizing: border-box;
+}
+
+/* 다시 시도 (메인 버튼) */
+.retry-btn {
+  background: #007aff;
+  color: white;
+}
+
+.retry-btn:active {
+  transform: scale(0.98);
+  background: #005bb5;
+}
+
+/* 닫기 버튼 */
+.close-btn {
+  background: rgba(0, 0, 0, 0.05);
+  color: #007aff;
+  /* 글씨만 파란색으로 처리 */
+}
+
+.close-btn:active {
+  background: rgba(0, 0, 0, 0.1);
+}

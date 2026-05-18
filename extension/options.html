@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <title>AI 딥페이크 판별기 설정</title>
+    <style>
+        body {
+            /* 애플 San Francisco 및 시스템 최적화 폰트 적용 */
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f5f5f7;
+            /* 애플 특유의 아주 연한 그레이 배경 */
+            color: #1d1d1f;
+            margin: 0;
+            padding: 40px 20px;
+            display: flex;
+            justify-content: center;
+            box-sizing: border-box;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 440px;
+            /* 너무 퍼지지 않도록 안정적인 너비 제한 */
+        }
+
+        h2 {
+            font-size: 24px;
+            font-weight: 700;
+            letter-spacing: -0.015em;
+            margin-top: 0;
+            margin-bottom: 20px;
+            color: #1d1d1f;
+            padding-left: 4px;
+        }
+
+        /* 아이폰/맥 설정 창처럼 입력 구역을 하얀색 카드로 분리 */
+        .section-card {
+            background: #ffffff;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+            margin-bottom: 20px;
+            box-sizing: border-box;
+        }
+
+        label {
+            font-size: 12px;
+            font-weight: 600;
+            color: #86868b;
+            /* 애플 서브 텍스트 전용 회색 */
+            display: block;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }
+
+        input[type="text"] {
+            width: 100%;
+            padding: 12px 14px;
+            box-sizing: border-box;
+            border: 1px solid #d2d2d7;
+            border-radius: 10px;
+            font-size: 15px;
+            background-color: #ffffff;
+            color: #1d1d1f;
+            transition: all 0.2s ease;
+            outline: none;
+        }
+
+        /* 입력창을 클릭(포커스)했을 때 은은한 애플 블루 하이라이트 */
+        input[type="text"]:focus {
+            border-color: #007aff;
+            box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.15);
+        }
+
+        input[type="text"]::placeholder {
+            color: #c7c7cc;
+        }
+
+        .btn-save {
+            width: 100%;
+            padding: 10px;
+            background-color: #62aaf7;
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.15s ease, transform 0.1s ease;
+        }
+
+        .btn-save:hover {
+            background-color: #0063cc;
+        }
+
+        /* 눌렀을 때 미세하게 줄어드는 버튼 효과 */
+        .btn-save:active {
+            transform: scale(0.99);
+        }
+
+        .status {
+            margin-top: 14px;
+            color: #34c759;
+            font-size: 14px;
+            font-weight: 500;
+            text-align: center;
+            height: 20px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h2>설정</h2>
+
+        <div class="section-card">
+            <label for="server-url">AI 분석 서버 (ngrok) 주소</label>
+            <input type="text" id="server-url" placeholder="예: https://1234-abcd.ngrok-free.app">
+        </div>
+
+        <button id="save-btn" class="btn-save">변경사항 저장</button>
+        <div id="status" class="status"></div>
+    </div>
+
+    <script src="options.js"></script>
+</body>
+
+</html>
