@@ -5,6 +5,7 @@ import torch
 import nltk
 import numpy as np
 import torch.nn.functional as F
+from huggingface_hub import hf_hub_download
 
 from dotenv import load_dotenv
 from kiwipiepy import Kiwi
@@ -63,9 +64,13 @@ class AITextDetector:
         # ======================================
 
         try:
+            threshold_path = hf_hub_download(
+                repo_id="seongwoo02/ai_text_detector",
+                filename="thresholds.json",
+                token=token
+                )
 
-            with open("thresholds.json", "r", encoding="utf-8") as f:
-
+            with open(threshold_path, "r", encoding="utf-8") as f:
                 thresholds = json.load(f)
 
             self.THRESH_BURST_KO = thresholds["THRESH_BURST_KO"]
@@ -77,7 +82,6 @@ class AITextDetector:
             print("✅ thresholds.json 로드 완료")
 
         except Exception as e:
-
             print("⚠️ threshold 파일 없음 → 기본값 사용")
 
             self.THRESH_BURST_KO = 16.8
@@ -93,7 +97,6 @@ class AITextDetector:
         print(f"\n🤖 XLM-RoBERTa 탐지 모델 로드 중... ({model_path})")
 
         try:
-
             self.roberta_tokenizer = AutoTokenizer.from_pretrained(
                 model_path, token=token
             )
@@ -103,7 +106,6 @@ class AITextDetector:
             ).to(self.device)
 
         except Exception as e:
-
             print(f"⚠️ 모델 로드 실패: {e}")
             print("💡 기본 xlm-roberta-base 모델 사용")
 
