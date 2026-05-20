@@ -41,9 +41,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-models_dict = load_models()
-text_detector = None
-
 
 class TextRequest(BaseModel):
     text: str
@@ -67,6 +64,10 @@ def get_text_detector():
     return text_detector
 
 # 파일 크기 제한
+
+models_dict = load_models()
+text_detector = None
+detector = get_text_detector()
 MAX_FILE_SIZE = 10 * 1024 * 1024
 
 @app.get("/")
@@ -78,6 +79,12 @@ async def predict(file: UploadFile = File(...)):
     image_bytes = await file.read()
     result = predict_image(image_bytes, models_dict)
     return result
+
+
+@app.post("/predict-frame")
+async def predict_frame(file: UploadFile = File(...)):
+    image_bytes = await file.read()
+    return predict_image(image_bytes, models_dict, mode="video", include_grad_cam=False)
 
 @app.post("/predict-video")
 async def predict_video(file: UploadFile = File(...)):
@@ -130,7 +137,6 @@ async def detect_text(request: TextRequest):
         )
 
     try:
-        detector = get_text_detector()
         return detector.detect(request.text)
     except Exception as e:
         print(f"Text detection failed: {e}")

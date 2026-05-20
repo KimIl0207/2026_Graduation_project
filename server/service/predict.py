@@ -25,7 +25,7 @@ MODEL_KEYS = {
 }
 
 
-def predict_image(image_bytes, models_dict, mode="image"):
+def predict_image(image_bytes, models_dict, mode="image", include_grad_cam=True):
     image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     if image.size[0] < 224 or image.size[1] < 224:
         return {"error": "Image is too small. Minimum size is 224x224 pixels."}
@@ -64,13 +64,15 @@ def predict_image(image_bytes, models_dict, mode="image"):
     # Grad-CAM은 "최종 판정"에 가장 큰 영향을 준 후보 모델의 마지막 convolution feature를 사용한다.
     # Real Image로 판정되어도 max 점수를 낸 모델을 설명 대상으로 유지해,
     # 어떤 AI 생성기 특징이 가장 강하게/약하게 감지됐는지 확인할 수 있게 한다.
-    explanation_model_key = max(probs, key=probs.get)
-    grad_cam = generate_grad_cam(
-        image=image,
-        input_tensor=input_tensor,
-        model=models_dict[MODEL_KEYS[explanation_model_key]],
-        model_key=explanation_model_key,
-    )
+    grad_cam = None
+    if include_grad_cam:
+        explanation_model_key = max(probs, key=probs.get)
+        grad_cam = generate_grad_cam(
+            image=image,
+            input_tensor=input_tensor,
+            model=models_dict[MODEL_KEYS[explanation_model_key]],
+            model_key=explanation_model_key,
+        )
 
     return {
         "label": label,
@@ -88,7 +90,7 @@ def predict_image(image_bytes, models_dict, mode="image"):
 def predict_images(image_bytes_list, models_dict):
     results = []
     for image_bytes in image_bytes_list:
-        result = predict_image(image_bytes, models_dict)
+        result = predict_image(image_bytes, models_dict, mode="video", include_grad_cam=False)
         results.append(result["probability"])
     return sum(results) / len(results) if results else 0.0
 
