@@ -34,3 +34,10 @@ ngrok.exe
 /server/util/data_loader.py
 /server/util/image_list.csv
 /server/util/.frame_cache
+/server/util/download_dataset.py
+/server/util/prepare_hf_dataset.py
+
+/datasets
+/server/benchmark_predictions.csv
+/server/benchmark_results.csv
+/server/benchmark_truth.csv

@@ -41,8 +41,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-models_dict = load_models()
-text_detector = None
 
 
 class TextRequest(BaseModel):
@@ -66,6 +64,9 @@ def get_text_detector():
 
     return text_detector
 
+models_dict = load_models()
+text_detector = None
+detector = get_text_detector()
 # 파일 크기 제한
 MAX_FILE_SIZE = 10 * 1024 * 1024
 
@@ -130,7 +131,6 @@ async def detect_text(request: TextRequest):
         )
 
     try:
-        detector = get_text_detector()
         return detector.detect(request.text)
     except Exception as e:
         print(f"Text detection failed: {e}")
