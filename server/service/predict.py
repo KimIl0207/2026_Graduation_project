@@ -51,7 +51,7 @@ def confidence_level(score, disagreement):
     return "low"
 
 
-def predict_image(image_bytes, models_dict, mode="image"):
+def predict_image(image_bytes, models_dict, mode="image", include_grad_cam=True):
     image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     if image.size[0] < 224 or image.size[1] < 224:
         return {"error": "Image is too small. Minimum size is 224x224 pixels."}
@@ -121,7 +121,7 @@ def predict_image(image_bytes, models_dict, mode="image"):
 def predict_images(image_bytes_list, models_dict):
     results = []
     for image_bytes in image_bytes_list:
-        result = predict_image(image_bytes, models_dict)
+        result = predict_image(image_bytes, models_dict, mode="video", include_grad_cam=False)
         results.append(result["suspicious_score"])
     return sum(results) / len(results) if results else 0.0
 
