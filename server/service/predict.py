@@ -25,7 +25,33 @@ MODEL_KEYS = {
 }
 
 
-def predict_image(image_bytes, models_dict, mode="image", include_grad_cam=True):
+def fuse_model_probs(sd, mj, bg):
+    """Combine detector outputs into one AI-like suspicious score."""
+    probs = [sd, mj, bg]
+    max_prob = max(probs)
+    avg_prob = sum(probs) / len(probs)
+    return max_prob * 0.7 + avg_prob * 0.3
+
+
+def model_disagreement(sd, mj, bg):
+    """Measure how far the three detector opinions are spread apart."""
+    probs = [sd, mj, bg]
+    return max(probs) - min(probs)
+
+
+def confidence_level(score, disagreement):
+    """Estimate confidence from score strength and model agreement."""
+    is_clear_score = score >= 0.75 or score <= 0.25
+    is_moderate_score = score >= 0.6 or score <= 0.4
+
+    if disagreement <= 0.25 and is_clear_score:
+        return "high"
+    if disagreement <= 0.5 and is_moderate_score:
+        return "medium"
+    return "low"
+
+
+def predict_image(image_bytes, models_dict, mode="image"):
     image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     if image.size[0] < 224 or image.size[1] < 224:
         return {"error": "Image is too small. Minimum size is 224x224 pixels."}
@@ -53,13 +79,15 @@ def predict_image(image_bytes, models_dict, mode="image", include_grad_cam=True)
         "bg": bg_prob,
     }
 
-    generator_model = max(probs, key=probs.get)
-    probability = probs[generator_model]
-    if probability >= 0.5:
-        label = "AI Generated"
-    else:
-        label = "Real Image"
-        generator_model = "Not an ai"
+    # Final decision is based on fused suspicious score, not a single detector.
+    suspicious_score = fuse_model_probs(sd_prob, mj_prob, bg_prob)
+    disagreement = model_disagreement(sd_prob, mj_prob, bg_prob)
+    confidence = confidence_level(suspicious_score, disagreement)
+    label = (
+        "Suspicious AI-like Image"
+        if suspicious_score >= 0.5
+        else "Likely Real Image"
+    )
 
     # Grad-CAM은 "최종 판정"에 가장 큰 영향을 준 후보 모델의 마지막 convolution feature를 사용한다.
     # Real Image로 판정되어도 max 점수를 낸 모델을 설명 대상으로 유지해,
@@ -76,22 +104,25 @@ def predict_image(image_bytes, models_dict, mode="image", include_grad_cam=True)
 
     return {
         "label": label,
-        "probability": round(probability, 4),
-        "generator_model": generator_model,
-        "probs": {
+        "suspicious_score": round(suspicious_score, 4),
+        "confidence": confidence,
+        "model_probs": {
             "sd": round(sd_prob, 4),
             "mj": round(mj_prob, 4),
             "bg": round(bg_prob, 4),
         },
-        "avg_prob": round((sd_prob + mj_prob + bg_prob) / 3, 4),
+        "signals": {
+            "model_fusion": round(suspicious_score, 4),
+            "model_disagreement": round(disagreement, 4),
+        },
         "grad_cam": grad_cam,
     }
 
 def predict_images(image_bytes_list, models_dict):
     results = []
     for image_bytes in image_bytes_list:
-        result = predict_image(image_bytes, models_dict, mode="video", include_grad_cam=False)
-        results.append(result["probability"])
+        result = predict_image(image_bytes, models_dict)
+        results.append(result["suspicious_score"])
     return sum(results) / len(results) if results else 0.0
 
 
