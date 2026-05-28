@@ -15,9 +15,9 @@
   ],
   "action": {
     "default_title": "판별 시작",
-    "default_popup": "popup.html"
+    "default_popup": "popup/popup.html"
   },
-  "options_page": "options.html",
+  "options_page": "options/options.html",
   "background": {
     "service_worker": "background.js"
   },
@@ -27,14 +27,18 @@
         "<all_urls>"
       ],
       "js": [
-        "content.js"
+        "content/common.js",
+        "content/image.js",
+        "content/video.js",
+        "content/text.js",
+        "content/content.js"
       ]
     }
   ],
   "web_accessible_resources": [
     {
       "resources": [
-        "style.css"
+        "content/style.css"
       ],
       "matches": [
         "<all_urls>"
