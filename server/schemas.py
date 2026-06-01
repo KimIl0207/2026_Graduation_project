@@ -49,6 +49,19 @@ class VideoPredictionResponse(BaseModel):
     frame_predictions: Optional[List[float]] = Field(None, description="Frame-level suspicious scores.")
 
 
+class TextHighlight(BaseModel):
+    text: str = Field(..., description="Sentence or text span that was analyzed.")
+    start: int = Field(..., description="Start character offset in the original text.")
+    end: int = Field(..., description="End character offset in the original text.")
+    language: str = Field(..., description="Detected language for this span.")
+    ai_prob: float = Field(..., description="Final AI-like probability for this span, 0 to 100.")
+    roberta_ai_prob: float = Field(..., description="RoBERTa AI probability for this span, 0 to 100.")
+    perplexity: Optional[float] = Field(None, description="Perplexity for this span.")
+    ppl_score: Optional[float] = Field(None, description="Normalized AI score from span perplexity.")
+    is_ai_like: bool = Field(..., description="Whether this span is likely AI-like.")
+    reason: str = Field(..., description="Short explanation for why this span was flagged.")
+
+
 class TextDetectionResponse(BaseModel):
     language: Optional[str] = Field(None, description="Detected primary language.")
     roberta_ai_prob: Optional[float] = Field(None, description="XLM-RoBERTa AI probability, 0 to 100.")
@@ -58,6 +71,7 @@ class TextDetectionResponse(BaseModel):
     perplexity: Optional[float] = Field(None, description="Average language-model perplexity.")
     burst_score: Optional[float] = Field(None, description="Normalized AI score from burstiness.")
     ppl_score: Optional[float] = Field(None, description="Normalized AI score from perplexity.")
+    sentence_highlights: Optional[List[TextHighlight]] = Field(None, description="Sentence-level AI-like spans.")
 
 
 class SaveCorrectionResponse(BaseModel):

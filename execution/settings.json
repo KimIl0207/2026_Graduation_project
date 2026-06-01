@@ -1,0 +1,7 @@
+{
+  "server_url": "https://bovinely-astrometric-shari.ngrok-free.dev",
+  "image_hotkey": "Ctrl+Shift+I",
+  "video_hotkey": "Ctrl+Shift+V",
+  "video_seconds": 5,
+  "video_fps": 4
+}

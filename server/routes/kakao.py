@@ -38,24 +38,24 @@ async def kakao_detect(req: Request):
             result = await predict_video_file(video_file, models_dict)
 
             if "error" in result:
-                return kakao_response(f"Video detection failed: {result['error']}", QUICK_REPLY_RESTART)
+                return kakao_response(f"영상 감지 실패: {result['error']}", QUICK_REPLY_RESTART)
 
             label = result.get("label", "Unknown")
             prob = result.get("suspicious_score", 0)
             frame_count = result.get("frame_count", 0)
 
             text = (
-                "Video detection result\n\n"
-                f"Label: {label}\n"
-                f"Suspicious score: {prob:.2f}\n"
-                f"Analyzed frames: {frame_count}\n\n"
-                "Send another text, image, or video to analyze."
+                "영상 감지 결과\n\n"
+                f"결과: {label}\n"
+                f"의심 점수: {prob:.2f}\n"
+                f"분석된 프레임: {frame_count}\n\n"
+                "다른 텍스트, 이미지, 또는 영상을 보내주세요."
             )
             return kakao_response(text, QUICK_REPLY_RESTART)
 
         except Exception as e:
             print(f"Kakao video detection error: {e}")
-            return kakao_response("Video detection failed. Please try again.", QUICK_REPLY_RESTART)
+            return kakao_response("영상 감지 실패. 다시 시도해주세요.", QUICK_REPLY_RESTART)
 
     if image_url:
         try:
@@ -68,17 +68,17 @@ async def kakao_detect(req: Request):
             confidence_text = f"\nConfidence: {confidence}" if confidence else ""
 
             text = (
-                "Image detection result\n\n"
-                f"Label: {label}\n"
-                f"Suspicious score: {prob:.2f}"
+                "이미지 감지 결과\n\n"
+                f"결과: {label}\n"
+                f"의심 점수: {prob:.2f}"
                 f"{confidence_text}\n\n"
-                "Send another content item to analyze."
+                "다른 콘텐츠를 보내주세요."
             )
             return kakao_response(text, QUICK_REPLY_RESTART)
 
         except Exception as e:
             print(f"Kakao image detection error: {e}")
-            return kakao_response("Image detection failed. Please try again.", QUICK_REPLY_RESTART)
+            return kakao_response("이미지 감지 실패. 다시 시도해주세요.", QUICK_REPLY_RESTART)
 
     if len(utterance) >= 10:
         try:
@@ -89,15 +89,15 @@ async def kakao_detect(req: Request):
             label = "Likely AI-written" if prob > 60 else "Likely human-written"
 
             text = (
-                "Text detection result\n\n"
-                f"Label: {label}\n"
-                f"Probability: {prob:.2f}%\n\n"
-                "Send another content item to analyze."
+                "텍스트 감지 결과\n\n"
+                f"결과: {label}\n"
+                f"확률: {prob:.2f}%\n\n"
+                "다른 콘텐츠를 보내주세요."
             )
             return kakao_response(text, QUICK_REPLY_RESTART)
 
         except Exception as e:
             print(f"Kakao text detection error: {e}")
-            return kakao_response("Text detection failed. Please try again.", QUICK_REPLY_RESTART)
+            return kakao_response("텍스트 감지 실패. 다시 시도해주세요.", QUICK_REPLY_RESTART)
 
-    return kakao_response("Please send text with at least 10 characters, an image, or a video.")
+    return kakao_response("10자 이상의 텍스트, 이미지, 또는 영상을 보내주세요.")

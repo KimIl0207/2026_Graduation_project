@@ -1,4 +1,4 @@
-/__pycache__
+__pycache__/
 /server/__pycache__
 /server/service/__pycache__
 /server/util/__pycache__
@@ -50,3 +50,6 @@ ngrok.exe
 py.py
 
 /routes/__pycache__
+
+/execution/__pycache__
+/execution/captures

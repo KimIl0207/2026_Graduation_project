@@ -79,10 +79,10 @@ async def predict_frame_images(files: list[UploadFile] = File(...)):
     tags=["Text Detection"],
 )
 async def detect_text(request: TextRequest):
-    if not request.text or len(request.text.strip()) < 10:
+    if not request.text or len(request.text.strip()) < 10 or len(request.text) > 2000:
         raise HTTPException(
             status_code=400,
-            detail="Text must be at least 10 characters.",
+            detail="Text must be between 10 and 2000 characters.",
         )
 
     try:

@@ -226,6 +226,17 @@ class AITextDetector:
         except:
             return 0.0
 
+    def _get_roberta_ai_prob(self, text):
+        inputs = self.roberta_tokenizer(
+            text, return_tensors="pt", truncation=True, max_length=256
+        ).to(self.device)
+
+        with torch.no_grad():
+            outputs = self.roberta_model(**inputs)
+            probs = F.softmax(outputs.logits, dim=-1).squeeze()
+
+        return float(probs[1].item() * 100)
+
     def _normalize_score(self, value, threshold):
         if value <= 0:
             return 50.0
@@ -240,6 +251,79 @@ class AITextDetector:
             score = max(0, 50 - ((ratio - 1.0) * 50))
 
         return float(score)
+
+    def _find_sentence_offsets(self, text, sentences):
+        offsets = []
+        cursor = 0
+
+        for sentence in sentences:
+            start = text.find(sentence, cursor)
+
+            if start < 0:
+                start = text.find(sentence)
+
+            if start < 0:
+                start = cursor
+
+            end = start + len(sentence)
+            offsets.append((start, end))
+            cursor = end
+
+        return offsets
+
+    def _build_sentence_highlights(self, text, sentences):
+        highlights = []
+        offsets = self._find_sentence_offsets(text, sentences)
+
+        for sentence, (start, end) in zip(sentences, offsets):
+            stripped = sentence.strip()
+
+            if len(stripped) < 5:
+                continue
+
+            lang = self._detect_language_per_sentence(stripped)
+
+            if lang == "ko":
+                ppl = self._get_perplexity(
+                    stripped, self.ko_ppl_model, self.ko_ppl_tokenizer
+                )
+                ppl_threshold = self.THRESH_KO_PPL
+            else:
+                ppl = self._get_perplexity(
+                    stripped, self.en_ppl_model, self.en_ppl_tokenizer
+                )
+                ppl_threshold = self.THRESH_EN_PPL
+
+            roberta_ai_prob = self._get_roberta_ai_prob(stripped)
+            ppl_score = self._normalize_score(ppl, ppl_threshold) if ppl > 0 else 50.0
+            ai_prob = (roberta_ai_prob * 0.8) + (ppl_score * 0.2)
+            ai_prob = max(min(ai_prob, 100.0), 0.0)
+
+            if ai_prob >= 75:
+                reason = "RoBERTa and perplexity both look AI-like."
+            elif roberta_ai_prob >= 70:
+                reason = "RoBERTa classifier strongly flagged this sentence."
+            elif ppl_score >= 70:
+                reason = "Perplexity is low, so wording looks too predictable."
+            else:
+                reason = "Not strongly AI-like."
+
+            highlights.append({
+                "text": stripped,
+                "start": start,
+                "end": end,
+                "language": lang,
+                "ai_prob": round(ai_prob, 2),
+                "roberta_ai_prob": round(roberta_ai_prob, 2),
+                "perplexity": round(ppl, 4) if ppl > 0 else None,
+                "ppl_score": round(ppl_score, 2),
+                "is_ai_like": ai_prob >= 60,
+                "reason": reason,
+            })
+
+        highlights.sort(key=lambda item: item["ai_prob"], reverse=True)
+
+        return highlights
 
     # ==========================================
     # Main Detector
@@ -282,18 +366,12 @@ class AITextDetector:
         # XLM-R
         # ======================================
 
-        inputs = self.roberta_tokenizer(
-            text, return_tensors="pt", truncation=True, max_length=256
-        ).to(self.device)
-
-        with torch.no_grad():
-            outputs = self.roberta_model(**inputs)
-
-            probs = F.softmax(outputs.logits, dim=-1).squeeze()
-
-        ai_prob = float(probs[1].item() * 100)
+        ai_prob = self._get_roberta_ai_prob(text)
 
         results["roberta_ai_prob"] = ai_prob
+        results["sentence_highlights"] = self._build_sentence_highlights(
+            text, sentences
+        )
 
         # ======================================
         # EXTREME SHORTCUT ONLY
