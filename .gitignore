@@ -1,5 +1,4 @@
-/__pycache__
-<<<<<<< HEAD
+__pycache__/
 /server/__pycache__
 /server/service/__pycache__
 /server/util/__pycache__
@@ -42,7 +41,6 @@ ngrok.exe
 /server/benchmark_predictions.csv
 /server/benchmark_results.csv
 /server/benchmark_truth.csv
-=======
 /.env
 /.env.example
 **/.env
@@ -50,4 +48,8 @@ ngrok.exe
 /corrections
 /front
 py.py
->>>>>>> 85618fb0ba2c616d86b1addb72f14baf8e3b76a9
+
+/routes/__pycache__
+
+/execution/__pycache__
+/execution/captures
