@@ -59,11 +59,15 @@ class ModelProbs(BaseModel):
     sd: float = Field(..., description="Stable Diffusion detector의 sigmoid 확률값")
     mj: float = Field(..., description="Midjourney detector의 sigmoid 확률값")
     bg: float = Field(..., description="BigGAN detector의 sigmoid 확률값")
+    sd3: float = Field(..., description="Stable Diffusion 3 finetuned detector의 sigmoid 확률값")
+    sdxl: float = Field(..., description="SDXL finetuned detector의 sigmoid 확률값")
+    dalle3: float = Field(..., description="DALL-E 3 finetuned detector의 sigmoid 확률값")
 
 
 class PredictionSignals(BaseModel):
-    model_fusion: float = Field(..., description="3개 모델 확률을 합성한 최종 suspicious_score")
+    model_fusion: float = Field(..., description="활성화된 모든 이미지 detector 확률을 가중 합성한 최종 suspicious_score. SDXL은 튐을 줄이기 위해 낮은 가중치 적용")
     model_disagreement: float = Field(..., description="모델 간 불일치도. max(prob) - min(prob)")
+    sdxl_spike: bool = Field(..., description="SDXL detector가 0.9 이상으로 강하게 반응했는지 여부. GPT류 그래픽 이미지 보조 신호")
 
 
 class GradCamResponse(BaseModel):
@@ -144,8 +148,9 @@ async def root():
     response_model_exclude_none=True,
     summary="이미지 AI 의심 점수 분석",
     description=(
-        "업로드한 이미지 1장을 Stable Diffusion, Midjourney, BigGAN detector로 분석한 뒤 "
-        "3개 모델의 sigmoid 확률을 합성해 최종 suspicious_score를 반환합니다. "
+        "업로드한 이미지 1장을 Stable Diffusion, Midjourney v6, BigGAN, SD3, SDXL, DALL-E 3 detector로 분석한 뒤 "
+        "모든 모델의 sigmoid 확률을 가중 합성해 최종 suspicious_score를 반환합니다. "
+        "SDXL detector는 과민 반응을 줄이기 위해 낮은 가중치를 적용합니다. "
         "model_probs는 개별 모델 출력값이고, signals는 모델 합성 점수와 모델 간 불일치도입니다."
     ),
     tags=["Image Detection"],
@@ -160,16 +165,20 @@ async def root():
                             "value": {
                                 "filename": "sample.jpg",
                                 "label": "Suspicious AI-like Image",
-                                "suspicious_score": 0.684,
+                                "suspicious_score": 0.64,
                                 "confidence": "medium",
                                 "model_probs": {
                                     "sd": 0.71,
                                     "mj": 0.32,
                                     "bg": 0.18,
+                                    "sd3": 0.64,
+                                    "sdxl": 0.59,
+                                    "dalle3": 0.42,
                                 },
                                 "signals": {
-                                    "model_fusion": 0.684,
+                                    "model_fusion": 0.64,
                                     "model_disagreement": 0.53,
+                                    "sdxl_spike": False,
                                 },
                                 "grad_cam": {
                                     "model": "sd",

@@ -18,24 +18,38 @@ video_transform = transforms.Compose([
     # transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
 ])
 
-MODEL_KEYS = {
-    "sd": "sd",
-    "mj": "midjourney",
-    "bg": "biggan",
+MODEL_WEIGHTS = {
+    "sdxl": 0.4,
 }
 
 
-def fuse_model_probs(sd, mj, bg):
+def get_model_weight(model_key):
+    return MODEL_WEIGHTS.get(model_key, 1.0)
+
+
+def _as_prob_list(probs):
+    if len(probs) == 1 and isinstance(probs[0], (list, tuple)):
+        return list(probs[0])
+    return list(probs)
+
+
+def fuse_model_probs(*probs, weights=None):
     """Combine detector outputs into one AI-like suspicious score."""
-    probs = [sd, mj, bg]
-    max_prob = max(probs)
-    avg_prob = sum(probs) / len(probs)
-    return max_prob * 0.7 + avg_prob * 0.3
+    if len(probs) == 1 and isinstance(probs[0], dict):
+        probs = list(probs[0].values())
+    else:
+        probs = _as_prob_list(probs)
+
+    weights = weights or [1.0] * len(probs)
+    weighted_probs = [prob * weight for prob, weight in zip(probs, weights)]
+    weighted_max = max(weighted_probs)
+    weighted_avg = sum(weighted_probs) / sum(weights)
+    return weighted_max * 0.7 + weighted_avg * 0.3
 
 
-def model_disagreement(sd, mj, bg):
-    """Measure how far the three detector opinions are spread apart."""
-    probs = [sd, mj, bg]
+def model_disagreement(*probs):
+    """Measure how far the detector opinions are spread apart."""
+    probs = _as_prob_list(probs)
     return max(probs) - min(probs)
 
 
@@ -51,6 +65,10 @@ def confidence_level(score, disagreement):
     return "low"
 
 
+def has_sdxl_spike(probs):
+    return probs.get("sdxl", 0.0) >= 0.9
+
+
 def predict_image(image_bytes, models_dict, mode="image"):
     image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     if image.size[0] < 224 or image.size[1] < 224:
@@ -64,28 +82,21 @@ def predict_image(image_bytes, models_dict, mode="image"):
 
     input_tensor = input_tensor.unsqueeze(0)
 
-    sd_model = models_dict["sd"]
-    mj_model = models_dict["midjourney"]
-    bg_model = models_dict["biggan"]
-
     with torch.no_grad():
-        sd_prob = torch.sigmoid(sd_model(input_tensor)).item()
-        mj_prob = torch.sigmoid(mj_model(input_tensor)).item()
-        bg_prob = torch.sigmoid(bg_model(input_tensor)).item()
-
-    probs = {
-        "sd": sd_prob,
-        "mj": mj_prob,
-        "bg": bg_prob,
-    }
+        probs = {
+            model_key: torch.sigmoid(model(input_tensor)).item()
+            for model_key, model in models_dict.items()
+        }
 
     # Final decision is based on fused suspicious score, not a single detector.
-    suspicious_score = fuse_model_probs(sd_prob, mj_prob, bg_prob)
-    disagreement = model_disagreement(sd_prob, mj_prob, bg_prob)
+    weights = [get_model_weight(model_key) for model_key in probs.keys()]
+    suspicious_score = fuse_model_probs(*probs.values(), weights=weights)
+    disagreement = model_disagreement(*probs.values())
+    sdxl_spike = has_sdxl_spike(probs)
     confidence = confidence_level(suspicious_score, disagreement)
     label = (
         "Suspicious AI-like Image"
-        if suspicious_score >= 0.5
+        if suspicious_score >= 0.5 or sdxl_spike
         else "Likely Real Image"
     )
 
@@ -96,7 +107,7 @@ def predict_image(image_bytes, models_dict, mode="image"):
     grad_cam = generate_grad_cam(
         image=image,
         input_tensor=input_tensor,
-        model=models_dict[MODEL_KEYS[explanation_model_key]],
+        model=models_dict[explanation_model_key],
         model_key=explanation_model_key,
     )
 
@@ -105,13 +116,13 @@ def predict_image(image_bytes, models_dict, mode="image"):
         "suspicious_score": round(suspicious_score, 4),
         "confidence": confidence,
         "model_probs": {
-            "sd": round(sd_prob, 4),
-            "mj": round(mj_prob, 4),
-            "bg": round(bg_prob, 4),
+            model_key: round(prob, 4)
+            for model_key, prob in probs.items()
         },
         "signals": {
             "model_fusion": round(suspicious_score, 4),
             "model_disagreement": round(disagreement, 4),
+            "sdxl_spike": sdxl_spike,
         },
         "grad_cam": grad_cam,
     }
