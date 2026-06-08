@@ -13,5 +13,8 @@
     <EmbeddedResource Include="..\adam_capture.pyw" LogicalName="payload.adam_capture.pyw" />
     <EmbeddedResource Include="..\run_adam_capture.bat" LogicalName="payload.run_adam_capture.bat" />
     <EmbeddedResource Include="..\README.md" LogicalName="payload.README.md" />
+    <EmbeddedResource Include="..\assets\adam-icon.png" LogicalName="payload.assets.adam-icon.png" />
+    <EmbeddedResource Include="..\assets\adam-logo-header.png" LogicalName="payload.assets.adam-logo-header.png" />
+    <EmbeddedResource Include="..\assets\favicon.ico" LogicalName="payload.assets.favicon.ico" />
   </ItemGroup>
 </Project>

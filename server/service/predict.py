@@ -1,21 +1,21 @@
-import io
 import base64
+import io
+
+import numpy as np
 import torch
 import torch.nn.functional as F
-import numpy as np
 from PIL import Image
 from torchvision import transforms
+
 
 image_transform = transforms.Compose([
     transforms.Resize((224, 224)),
     transforms.ToTensor(),
-    # transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
 ])
 
 video_transform = transforms.Compose([
     transforms.Resize((256, 256)),
     transforms.ToTensor(),
-    # transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
 ])
 
 MODEL_WEIGHTS = {
@@ -69,52 +69,75 @@ def has_sdxl_spike(probs):
     return probs.get("sdxl", 0.0) >= 0.9
 
 
-def predict_image(image_bytes, models_dict, mode="image"):
-    image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-    if image.size[0] < 224 or image.size[1] < 224:
-        return {"error": "Image is too small. Minimum size is 224x224 pixels."}
-    if mode == "image":
-        input_tensor = image_transform(image)
-    elif mode == "video":
-        input_tensor = video_transform(image)
-    else:
-        raise ValueError("Invalid mode")
+def _label_for_score(score, force_ai=False):
+    return "Suspicious AI-like Image" if score >= 0.5 or force_ai else "Likely Real Image"
 
-    input_tensor = input_tensor.unsqueeze(0)
+
+def _predict_merged(image, input_tensor, models_dict, include_grad_cam):
+    model = models_dict["merged"]
+
+    with torch.no_grad():
+        merged_prob = torch.sigmoid(model(input_tensor)).item()
+
+    grad_cam = None
+    if include_grad_cam:
+        grad_cam = generate_grad_cam(
+            image=image,
+            input_tensor=input_tensor,
+            model=model,
+            model_key="merged",
+        )
+
+    return {
+        "label": _label_for_score(merged_prob),
+        "suspicious_score": round(merged_prob, 4),
+        "confidence": confidence_level(merged_prob, 0.0),
+        "model_probs": {
+            "sd": round(merged_prob, 4),
+            "mj": round(merged_prob, 4),
+            "bg": round(merged_prob, 4),
+        },
+        "signals": {
+            "model_fusion": round(merged_prob, 4),
+            "model_disagreement": 0.0,
+            "sdxl_spike": False,
+        },
+        "grad_cam": grad_cam,
+    }
+
+
+def _predict_ensemble(image, input_tensor, models_dict, include_grad_cam):
+    model_items = {
+        model_key: model
+        for model_key, model in models_dict.items()
+        if model_key != "mode"
+    }
 
     with torch.no_grad():
         probs = {
             model_key: torch.sigmoid(model(input_tensor)).item()
-            for model_key, model in models_dict.items()
+            for model_key, model in model_items.items()
         }
 
-    # Final decision is based on fused suspicious score, not a single detector.
     weights = [get_model_weight(model_key) for model_key in probs.keys()]
     suspicious_score = fuse_model_probs(*probs.values(), weights=weights)
     disagreement = model_disagreement(*probs.values())
     sdxl_spike = has_sdxl_spike(probs)
-    confidence = confidence_level(suspicious_score, disagreement)
-    label = (
-        "Suspicious AI-like Image"
-        if suspicious_score >= 0.5 or sdxl_spike
-        else "Likely Real Image"
-    )
 
-    # Grad-CAM은 "최종 판정"에 가장 큰 영향을 준 후보 모델의 마지막 convolution feature를 사용한다.
-    # Real Image로 판정되어도 max 점수를 낸 모델을 설명 대상으로 유지해,
-    # 어떤 AI 생성기 특징이 가장 강하게/약하게 감지됐는지 확인할 수 있게 한다.
-    explanation_model_key = max(probs, key=probs.get)
-    grad_cam = generate_grad_cam(
-        image=image,
-        input_tensor=input_tensor,
-        model=models_dict[explanation_model_key],
-        model_key=explanation_model_key,
-    )
+    grad_cam = None
+    if include_grad_cam:
+        explanation_model_key = max(probs, key=probs.get)
+        grad_cam = generate_grad_cam(
+            image=image,
+            input_tensor=input_tensor,
+            model=model_items[explanation_model_key],
+            model_key=explanation_model_key,
+        )
 
     return {
-        "label": label,
+        "label": _label_for_score(suspicious_score, force_ai=sdxl_spike),
         "suspicious_score": round(suspicious_score, 4),
-        "confidence": confidence,
+        "confidence": confidence_level(suspicious_score, disagreement),
         "model_probs": {
             model_key: round(prob, 4)
             for model_key, prob in probs.items()
@@ -127,6 +150,27 @@ def predict_image(image_bytes, models_dict, mode="image"):
         "grad_cam": grad_cam,
     }
 
+
+def predict_image(image_bytes, models_dict, mode="image", include_grad_cam=True):
+    image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    if image.size[0] < 224 or image.size[1] < 224:
+        return {"error": "Image is too small. Minimum size is 224x224 pixels."}
+
+    if mode == "image":
+        input_tensor = image_transform(image)
+    elif mode == "video":
+        input_tensor = video_transform(image)
+    else:
+        raise ValueError("Invalid mode")
+
+    input_tensor = input_tensor.unsqueeze(0)
+
+    if models_dict.get("mode") == "merged":
+        return _predict_merged(image, input_tensor, models_dict, include_grad_cam)
+
+    return _predict_ensemble(image, input_tensor, models_dict, include_grad_cam)
+
+
 def predict_images(image_bytes_list, models_dict):
     results = []
     for image_bytes in image_bytes_list:
@@ -136,12 +180,10 @@ def predict_images(image_bytes_list, models_dict):
 
 
 def generate_grad_cam(image, input_tensor, model, model_key):
-    """EfficientNet-B0의 마지막 feature map으로 Grad-CAM heatmap overlay를 만든다."""
+    """Create a Grad-CAM overlay from EfficientNet-B0's final feature block."""
     activations = []
     gradients = []
     display_image = resize_for_grad_cam(image)
-
-    # torchvision EfficientNet은 features[-1]이 classifier 직전의 마지막 convolution block이다.
     target_layer = model.features[-1]
 
     def save_activation(_module, _input, output):
@@ -156,7 +198,6 @@ def generate_grad_cam(image, input_tensor, model, model_key):
     try:
         model.zero_grad(set_to_none=True)
 
-        # Grad-CAM은 gradient가 필요하므로 torch.no_grad()를 사용하지 않는다.
         output = model(input_tensor)
         score = output.squeeze()
         score.backward()
@@ -167,7 +208,6 @@ def generate_grad_cam(image, input_tensor, model, model_key):
         activation = activations[0][0]
         gradient = gradients[0][0]
 
-        # 채널별 gradient 평균을 feature map 가중치로 사용한다.
         weights = gradient.mean(dim=(1, 2), keepdim=True)
         cam = torch.sum(weights * activation, dim=0)
         cam = F.relu(cam)
@@ -200,7 +240,6 @@ def generate_grad_cam(image, input_tensor, model, model_key):
 
 
 def resize_for_grad_cam(image, max_side=768):
-    """모바일/API 응답이 너무 커지지 않도록 설명용 overlay 크기만 제한한다."""
     width, height = image.size
     largest_side = max(width, height)
     if largest_side <= max_side:
@@ -212,7 +251,6 @@ def resize_for_grad_cam(image, max_side=768):
 
 
 def build_heatmap_overlay(image, heatmap, alpha=0.45):
-    """외부 colormap 의존성 없이 빨강-노랑 heatmap을 원본 이미지에 합성한다."""
     original = np.array(image).astype(np.float32)
     heatmap = np.clip(heatmap, 0.0, 1.0)
 

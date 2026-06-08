@@ -19,11 +19,15 @@ class ModelProbs(BaseModel):
     sd: float = Field(..., description="Stable Diffusion detector sigmoid probability.")
     mj: float = Field(..., description="Midjourney detector sigmoid probability.")
     bg: float = Field(..., description="BigGAN detector sigmoid probability.")
+    sd3: Optional[float] = Field(None, description="Stable Diffusion 3 detector sigmoid probability.")
+    sdxl: Optional[float] = Field(None, description="SDXL detector sigmoid probability.")
+    dalle3: Optional[float] = Field(None, description="DALL-E 3 detector sigmoid probability.")
 
 
 class PredictionSignals(BaseModel):
     model_fusion: float = Field(..., description="Final fused suspicious score.")
     model_disagreement: float = Field(..., description="max(prob) - min(prob).")
+    sdxl_spike: Optional[bool] = Field(None, description="Whether SDXL detector produced a strong spike.")
 
 
 class GradCamResponse(BaseModel):

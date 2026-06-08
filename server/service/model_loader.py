@@ -14,6 +14,19 @@ def load_single_model(model_path: str):
 
 def load_models():
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    mode = os.getenv("ADAM_IMAGE_MODEL_MODE", "merged").strip().lower()
+
+    if mode == "merged":
+        merged_model_path = os.path.join(
+            base_dir,
+            "model",
+            "merged",
+            "efficientnet_b0_adam_merged_3way.pth",
+        )
+        return {
+            "mode": "merged",
+            "merged": load_single_model(merged_model_path),
+        }
 
     sd_model_path = os.path.join(base_dir, "model", "best_efficientnet_b0_Diffusion.pth")
     midjourney_model_path = os.path.join(base_dir, "model", "best_efficientnet_b0_Midjourney_6.pth")
@@ -23,6 +36,7 @@ def load_models():
     dalle3_model_path = os.path.join(base_dir, "model", "best_efficientnet_b0_DALL_E_3_finetuned.pth")
 
     models_dict = {
+        "mode": "ensemble",
         "sd": load_single_model(sd_model_path),
         "mj": load_single_model(midjourney_model_path),
         "bg": load_single_model(biggan_model_path),
