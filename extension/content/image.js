@@ -129,12 +129,39 @@ function updateImageResultUI(response) {
     }
 
     const data = response.data || response;
-    const prob = data.predicted_probability !== undefined ? (data.predicted_probability * 100).toFixed(2) : 0;
-    const isReal = data.predicted_label === "Real Image" || data.predicted_label === "Real";
+
+    // 🔍 [그물망 코드] 서버가 어떤 이름으로 확률을 보내든 전부 잡아냅니다.
+    let rawProb = 0;
+    if (data.predicted_probability !== undefined) {
+        rawProb = data.predicted_probability;
+    } else if (data.prob !== undefined) {
+        rawProb = data.prob;
+    } else if (data.confidence !== undefined) {
+        rawProb = data.confidence;
+    } else if (data.probability !== undefined) {
+        rawProb = data.probability;
+    } else if (data.final_ai_prob !== undefined) {
+        rawProb = data.final_ai_prob;
+    }
+
+    // 숫자로 안전하게 변환
+    let finalProb = parseFloat(rawProb);
+    if (isNaN(finalProb)) finalProb = 0;
+
+    // 서버가 0~1 사이의 소수점으로 보냈다면 100을 곱해 퍼센트로 변환 (예: 0.954 -> 95.4)
+    if (finalProb > 0 && finalProb <= 1.0) {
+        finalProb = finalProb * 100;
+    }
+
+    // 판정 결과 라벨 매칭 (Real이 포함되어 있으면 진짜, 아니면 딥페이크)
+    const label = (data.predicted_label || data.decision || "").toLowerCase();
+    const isReal = label.includes("real") || label.includes("사람");
+
     const labelText = isReal ? "진짜(원본)" : "딥페이크 의심";
     const labelColor = isReal ? "#34c759" : "#ff3b30";
 
-    statusTxt.innerHTML = `<strong>결과: <span style="color:${labelColor};">${labelText}</span></strong> <br><span style="font-size: 12px; color:#86868b;">(딥페이크 확률: ${prob}%)</span>`;
-    progressFill.style.width = `${prob}%`;
+    // UI 업데이트 (확률 반영)
+    statusTxt.innerHTML = `<strong>결과: <span style="color:${labelColor};">${labelText}</span></strong> <br><span style="font-size: 12px; color:#86868b;">(딥페이크 확률: ${finalProb.toFixed(2)}%)</span>`;
+    progressFill.style.width = `${finalProb}%`;
     progressFill.style.backgroundColor = labelColor;
 }

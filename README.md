@@ -9,12 +9,11 @@ Image AI detection, text AI detection, correction data collection, and frontend/
 |-- front/                     # React web UI
 |-- mobile/                    # Mobile client
 |-- server/
-|   |-- main.py                # Image detection FastAPI server
-|   |-- textmain.py            # Text detection FastAPI server
-|   |-- ai_text_detector_engine.py
+|   |-- main.py                # Image and text detection FastAPI server
 |   |-- requirements.txt
 |   |-- model/                 # Image model weights
 |   |-- service/
+|   |   |-- ai_text_detector_engine.py
 |   |   |-- model_loader.py
 |   |   `-- predict.py
 |   |-- util/
@@ -33,19 +32,21 @@ cd server
 pip install -r requirements.txt
 ```
 
-Image detection server:
+API server:
 
 ```powershell
 uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
-Text detection server:
+Docker:
 
 ```powershell
-uvicorn textmain:app --host 0.0.0.0 --port 8001
+docker build -t ai-detection-server .
+docker run --rm -p 8000:8000 --env-file server/.env ai-detection-server
 ```
 
-Do not run both servers on the same port.
+The Docker image excludes local correction data in `server/corrections/`.
+Use a volume or external storage if correction uploads need to persist in production.
 
 ## Image API
 
@@ -110,12 +111,6 @@ Behavior:
 
 ## Text API
 
-`GET /`
-
-```json
-{"status": "online", "message": "AI Text Detector API is ready."}
-```
-
 `POST /detect`
 
 Body:
@@ -126,11 +121,11 @@ Body:
 }
 ```
 
-The text detector uses Hugging Face models. If the model is private, create `server/.env` from `server/.env.example`.
+The text detector uses Hugging Face models. If the model is private, create `server/.env`.
 
 ```powershell
 cd server
-Copy-Item .env.example .env
+New-Item .env
 ```
 
 Then set:
@@ -166,7 +161,7 @@ Set the backend URL in `front/.env` or in `front/src/App.js`, depending on the c
 
 ## ngrok
 
-Expose the image server:
+Expose the API server:
 
 ```powershell
 .\ngrok.exe http 8000

@@ -1,6 +1,8 @@
 package com.example.ai_detection;
 
+import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
@@ -11,6 +13,7 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.util.Base64;
 import android.view.View;
 import android.widget.Button;
 import android.widget.FrameLayout;
@@ -40,6 +43,34 @@ import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
 
+class ServerApi {
+    private Context context;
+
+    public ServerApi(Context context) {
+        this.context = context;
+    }
+
+    public String getBaseUrl() {
+        SharedPreferences prefs =
+                context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE);
+
+        return prefs.getString(
+                "server_url",
+                context.getString(R.string.server_url)
+        );
+    }
+
+    public String getPredictUrl() {
+        String baseUrl = getBaseUrl();
+
+        if (!baseUrl.endsWith("/")) {
+            baseUrl += "/";
+        }
+
+        return baseUrl + "predict";
+    }
+}
+
 public class ImageDetectionActivity extends AppCompatActivity {
 
     private ActivityResultLauncher<String> galleryLauncher;
@@ -61,6 +92,14 @@ public class ImageDetectionActivity extends AppCompatActivity {
         FrameLayout layoutImageArea = findViewById(R.id.layoutImageArea);
         TextView tvImageHint = findViewById(R.id.textViewImageHint);
         ImageView imageViewUploaded = findViewById(R.id.imageViewUploaded);
+        ImageView imageViewGradCam = new ImageView(this);
+        imageViewGradCam.setLayoutParams(new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+        ));
+        imageViewGradCam.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        imageViewGradCam.setVisibility(View.GONE);
+        layoutImageArea.addView(imageViewGradCam);
 
         // --- 외부 앱 공유나 위젯 캡처 등 넘어온 이미지 처리 ---
         Intent intent = getIntent();
@@ -79,6 +118,7 @@ public class ImageDetectionActivity extends AppCompatActivity {
                 Bitmap capturedBitmap = BitmapFactory.decodeFile(capturedImagePath);
                 imageViewUploaded.setImageBitmap(capturedBitmap);
                 imageViewUploaded.setVisibility(View.VISIBLE);
+                imageViewGradCam.setVisibility(View.GONE);
                 tvImageHint.setVisibility(View.GONE);
             }
         }
@@ -86,6 +126,7 @@ public class ImageDetectionActivity extends AppCompatActivity {
         if (imageUri != null) {
             imageViewUploaded.setImageURI(imageUri);
             imageViewUploaded.setVisibility(View.VISIBLE);
+            imageViewGradCam.setVisibility(View.GONE);
             tvImageHint.setVisibility(View.GONE);
         }
 
@@ -100,6 +141,7 @@ public class ImageDetectionActivity extends AppCompatActivity {
                         if ((mimeType != null && mimeType.startsWith("image/")) || uriStr.contains(".jpg") || uriStr.contains(".png") || uriStr.contains(".jpeg")) {
                             imageViewUploaded.setImageURI(uri);
                             imageViewUploaded.setVisibility(View.VISIBLE);
+                            imageViewGradCam.setVisibility(View.GONE);
                             tvImageHint.setVisibility(View.GONE);
                         } else if ((mimeType != null && mimeType.startsWith("text/")) || uriStr.contains(".txt")) {
                             String extractedText = readTextFile(uri);
@@ -127,12 +169,15 @@ public class ImageDetectionActivity extends AppCompatActivity {
                     if (uri != null) {
                         imageViewUploaded.setImageURI(uri);
                         imageViewUploaded.setVisibility(View.VISIBLE);
+                        imageViewGradCam.setVisibility(View.GONE);
                         tvImageHint.setVisibility(View.GONE);
                     }
                 }
         );
 
         layoutImageArea.setOnClickListener(v -> galleryLauncher.launch("image/*"));
+
+        ServerApi serverApi = new ServerApi(this);
 
         // [핵심] 판독하기 버튼: 진짜 서버 연동 로직
         btnAnalyze.setOnClickListener(v -> {
@@ -142,6 +187,7 @@ public class ImageDetectionActivity extends AppCompatActivity {
             }
 
             progressBar.setVisibility(View.VISIBLE);
+            imageViewGradCam.setVisibility(View.GONE);
             tvStatus.setText("AI 분석 서버와 통신 중입니다...");
             tvStatus.setTextColor(Color.BLACK); // 문구 색상 초기화
 
@@ -171,7 +217,7 @@ public class ImageDetectionActivity extends AppCompatActivity {
 
             // 4. 서버 요청 생성 (끝에 /predict 확인)
             Request request = new Request.Builder()
-                    .url(getString(R.string.server_url)+"/predict")
+                    .url(serverApi.getPredictUrl())
                     .post(requestBody)
                     .build();
 
@@ -222,9 +268,27 @@ public class ImageDetectionActivity extends AppCompatActivity {
                                 resultMsg = "💡 판독 완료: [" + label + "] 확률 " + percent + "%";
                             }
 
+                            // 서버가 반환한 Grad-CAM overlay를 디코딩한다.
+                            // 이 이미지는 모델이 판정할 때 상대적으로 크게 본 영역을 heatmap으로 합성한 PNG다.
+                            Bitmap gradCamBitmap = null;
+                            if (jsonObject.has("grad_cam") && !jsonObject.isNull("grad_cam")) {
+                                JSONObject gradCamObject = jsonObject.getJSONObject("grad_cam");
+                                String gradCamBase64 = gradCamObject.optString("image_base64", "");
+                                if (!gradCamBase64.isEmpty()) {
+                                    byte[] gradCamBytes = Base64.decode(gradCamBase64, Base64.DEFAULT);
+                                    gradCamBitmap = BitmapFactory.decodeByteArray(gradCamBytes, 0, gradCamBytes.length);
+                                }
+                            }
+
+                            final Bitmap finalGradCamBitmap = gradCamBitmap;
+
                             new Handler(Looper.getMainLooper()).post(() -> {
                                 progressBar.setVisibility(View.GONE);
                                 tvStatus.setText(resultMsg);
+                                if (finalGradCamBitmap != null) {
+                                    imageViewGradCam.setImageBitmap(finalGradCamBitmap);
+                                    imageViewGradCam.setVisibility(View.VISIBLE);
+                                }
                             });
 
                         } catch (Exception e) {
@@ -249,6 +313,8 @@ public class ImageDetectionActivity extends AppCompatActivity {
             progressBar.setVisibility(View.GONE);
             imageViewUploaded.setImageURI(null);
             imageViewUploaded.setVisibility(View.GONE);
+            imageViewGradCam.setImageURI(null);
+            imageViewGradCam.setVisibility(View.GONE);
             tvImageHint.setVisibility(View.VISIBLE);
         });
     }
