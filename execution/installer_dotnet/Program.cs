@@ -57,6 +57,11 @@ internal static class Program
         foreach (var resourceName in assembly.GetManifestResourceNames().Where(name => name.StartsWith("payload.")))
         {
             var fileName = resourceName["payload.".Length..];
+            if (fileName.StartsWith("assets."))
+            {
+                Directory.CreateDirectory(Path.Combine(installDir, "assets"));
+                fileName = Path.Combine("assets", fileName["assets.".Length..]);
+            }
             using var input = assembly.GetManifestResourceStream(resourceName)
                 ?? throw new InvalidOperationException($"Missing resource: {resourceName}");
             using var output = File.Create(Path.Combine(installDir, fileName));

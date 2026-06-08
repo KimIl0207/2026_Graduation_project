@@ -1,11 +1,10 @@
-import base64
+import concurrent.futures
 import ctypes
 import io
 import json
 import os
 import queue
 import sys
-import tempfile
 import threading
 import time
 import urllib.error
@@ -22,7 +21,7 @@ if getattr(sys, "frozen", False):
     os.environ.setdefault("TK_LIBRARY", str(runtime_dir / "tcl" / "tk8.6"))
 
 
-from tkinter import BOTH, BOTTOM, DISABLED, END, LEFT, NORMAL, RIGHT, TOP, Canvas, Entry, Frame, Label, Scrollbar, StringVar, Tk, Toplevel, messagebox
+from tkinter import BOTH, BOTTOM, DISABLED, END, LEFT, NORMAL, RIGHT, TOP, Canvas, Entry, Frame, Label, Scrollbar, StringVar, Text, Tk, Toplevel, messagebox
 from tkinter import ttk
 
 from PIL import Image, ImageGrab, ImageTk
@@ -32,6 +31,8 @@ APP_NAME = "ADAM Capture"
 APP_DIR = Path(sys.executable).parent if getattr(sys, "frozen", False) else Path(__file__).parent
 CONFIG_PATH = APP_DIR / "settings.json"
 CAPTURE_DIR = APP_DIR / "captures"
+ASSET_DIR = APP_DIR / "assets"
+SOURCE_ASSET_DIR = Path(__file__).resolve().parents[1] / "front" / "public"
 
 WM_HOTKEY = 0x0312
 MOD_ALT = 0x0001
@@ -50,6 +51,18 @@ DEFAULT_CONFIG = {
 }
 
 
+def get_asset_path(name):
+    bundled = ASSET_DIR / name
+    if bundled.exists():
+        return bundled
+
+    source = SOURCE_ASSET_DIR / name
+    if source.exists():
+        return source
+
+    return None
+
+
 def enable_dpi_awareness():
     try:
         ctypes.windll.shcore.SetProcessDpiAwareness(2)
@@ -58,6 +71,26 @@ def enable_dpi_awareness():
             ctypes.windll.user32.SetProcessDPIAware()
         except Exception:
             pass
+
+
+def apply_window_icon(window):
+    ico_path = get_asset_path("favicon.ico")
+    png_path = get_asset_path("adam-icon.png")
+
+    try:
+        if ico_path:
+            window.iconbitmap(str(ico_path))
+            return
+    except Exception:
+        pass
+
+    try:
+        if png_path:
+            icon = ImageTk.PhotoImage(Image.open(png_path))
+            window.iconphoto(True, icon)
+            window._adam_icon_ref = icon
+    except Exception:
+        pass
 
 
 @dataclass
@@ -122,21 +155,38 @@ def parse_hotkey(value):
 
 
 def build_multipart(field_name, file_path, mime_type):
+    return build_multipart_bytes(
+        field_name,
+        Path(file_path).name,
+        Path(file_path).read_bytes(),
+        mime_type,
+    )
+
+
+def build_multipart_bytes(field_name, file_name, content, mime_type):
     boundary = f"----ADAMBoundary{int(time.time() * 1000)}"
-    file_name = Path(file_path).name
     body = io.BytesIO()
     body.write(f"--{boundary}\r\n".encode())
     body.write(
         f'Content-Disposition: form-data; name="{field_name}"; filename="{file_name}"\r\n'.encode()
     )
     body.write(f"Content-Type: {mime_type}\r\n\r\n".encode())
-    body.write(Path(file_path).read_bytes())
+    body.write(content)
     body.write(f"\r\n--{boundary}--\r\n".encode())
     return body.getvalue(), f"multipart/form-data; boundary={boundary}"
 
 
 def post_image(server_url, endpoint, file_path):
     body, content_type = build_multipart("file", file_path, "image/png")
+    return post_multipart(server_url, endpoint, body, content_type)
+
+
+def post_image_bytes(server_url, endpoint, file_name, content):
+    body, content_type = build_multipart_bytes("file", file_name, content, "image/png")
+    return post_multipart(server_url, endpoint, body, content_type)
+
+
+def post_multipart(server_url, endpoint, body, content_type):
     request = urllib.request.Request(
         f"{server_url.rstrip('/')}{endpoint}",
         data=body,
@@ -246,6 +296,10 @@ class SelectionOverlay:
         self.canvas.bind("<B1-Motion>", self.on_drag)
         self.canvas.bind("<ButtonRelease-1>", self.on_release)
         self.window.bind("<Escape>", self.cancel)
+        self.canvas.bind("<Escape>", self.cancel)
+        self.window.bind_all("<Escape>", self.cancel)
+        self.window.focus_force()
+        self.window.grab_set()
 
         self.hint = self.canvas.create_text(
             self.window.winfo_screenwidth() // 2,
@@ -268,6 +322,11 @@ class SelectionOverlay:
 
     def on_release(self, event):
         box = clamp_box((self.start_x, self.start_y, event.x, event.y))
+        try:
+            self.window.grab_release()
+            self.window.unbind_all("<Escape>")
+        except Exception:
+            pass
         self.window.destroy()
 
         if box[2] - box[0] < 12 or box[3] - box[1] < 12:
@@ -276,6 +335,11 @@ class SelectionOverlay:
         self.on_done(box)
 
     def cancel(self, _event=None):
+        try:
+            self.window.grab_release()
+            self.window.unbind_all("<Escape>")
+        except Exception:
+            pass
         self.window.destroy()
 
 
@@ -290,6 +354,7 @@ class ResultWindow:
         self.window.geometry("760x520")
         self.window.minsize(560, 420)
         self.window.configure(bg="#eef7f6")
+        apply_window_icon(self.window)
 
         shell = Frame(self.window, bg="#eef7f6")
         shell.pack(fill=BOTH, expand=True, padx=18, pady=18)
@@ -382,6 +447,7 @@ class SettingsApp:
         self.root.title(APP_NAME)
         self.root.geometry("520x560")
         self.root.configure(bg="#eef7f6")
+        apply_window_icon(self.root)
         self.root.protocol("WM_DELETE_WINDOW", self.hide_window)
 
         self.server_var = StringVar(value=self.config["server_url"])
@@ -390,6 +456,8 @@ class SettingsApp:
         self.video_seconds_var = StringVar(value=str(self.config["video_seconds"]))
         self.video_fps_var = StringVar(value=str(self.config["video_fps"]))
         self.status_var = StringVar(value="Ready.")
+        self.log_text = None
+        self.logo_ref = None
 
         self.build_ui()
         self.hotkeys = HotkeyThread(self.events, self.config)
@@ -432,7 +500,14 @@ class SettingsApp:
 
         header = Frame(page, bg="#eef7f6")
         header.pack(fill=BOTH)
-        Label(header, text="ADAM Capture", bg="#eef7f6", fg="#101828", font=("Segoe UI", 24, "bold")).pack(anchor="w")
+        logo_path = get_asset_path("adam-logo-header.png")
+        if logo_path:
+            logo = Image.open(logo_path)
+            logo.thumbnail((220, 74), Image.Resampling.LANCZOS)
+            self.logo_ref = ImageTk.PhotoImage(logo)
+            Label(header, image=self.logo_ref, bg="#eef7f6").pack(anchor="w", pady=(0, 8))
+        else:
+            Label(header, text="ADAM Capture", bg="#eef7f6", fg="#101828", font=("Segoe UI", 24, "bold")).pack(anchor="w")
         Label(header, text="Background capture assistant for image and video detection.", bg="#eef7f6", fg="#607086", font=("Segoe UI", 10, "bold")).pack(anchor="w", pady=(4, 18))
 
         card = Frame(page, bg="white", highlightbackground="#d6e3ea", highlightthickness=1)
@@ -450,6 +525,26 @@ class SettingsApp:
         ttk.Button(buttons, text="Capture image now", style="Soft.TButton", command=self.capture_image).pack(side=LEFT, fill=BOTH, expand=True, padx=(8, 0))
 
         ttk.Button(card, text="Capture video now", style="Soft.TButton", command=self.capture_video).pack(fill=BOTH, padx=18, pady=(0, 18))
+        ttk.Button(card, text="Exit ADAM Capture", style="Soft.TButton", command=self.exit_app).pack(fill=BOTH, padx=18, pady=(0, 18))
+
+        log_card = Frame(page, bg="white", highlightbackground="#d6e3ea", highlightthickness=1)
+        log_card.pack(fill=BOTH, expand=True, pady=(16, 0))
+        log_header = Frame(log_card, bg="white")
+        log_header.pack(fill=BOTH, padx=18, pady=(14, 8))
+        Label(log_header, text="Runtime logs", bg="white", fg="#101828", font=("Segoe UI", 13, "bold")).pack(side=LEFT)
+        ttk.Button(log_header, text="Clear", style="Soft.TButton", command=self.clear_logs).pack(side=RIGHT)
+        self.log_text = Text(
+            log_card,
+            height=10,
+            state=DISABLED,
+            relief="flat",
+            bg="#0f172a",
+            fg="#dbeafe",
+            insertbackground="#dbeafe",
+            font=("Consolas", 9),
+            wrap="word",
+        )
+        self.log_text.pack(fill=BOTH, expand=True, padx=18, pady=(0, 18))
 
         Label(page, textvariable=self.status_var, bg="#eef7f6", fg="#334155", font=("Segoe UI", 10, "bold")).pack(anchor="w", pady=(12, 0))
 
@@ -459,6 +554,27 @@ class SettingsApp:
         Label(wrapper, text=label, bg="white", fg="#344054", font=("Segoe UI", 10, "bold")).pack(anchor="w")
         entry = Entry(wrapper, textvariable=variable, relief="flat", bg="#f8fafc", fg="#101828", font=("Segoe UI", 11), highlightthickness=1, highlightbackground="#dbe4ee", highlightcolor="#22d3ee")
         entry.pack(fill=BOTH, ipady=9, pady=(7, 0))
+
+    def log(self, message):
+        self.events.put(("log", message))
+
+    def append_log(self, message):
+        if not self.log_text:
+            return
+
+        timestamp = time.strftime("%H:%M:%S")
+        self.log_text.configure(state=NORMAL)
+        self.log_text.insert(END, f"[{timestamp}] {message}\n")
+        self.log_text.see(END)
+        self.log_text.configure(state=DISABLED)
+
+    def clear_logs(self):
+        if not self.log_text:
+            return
+
+        self.log_text.configure(state=NORMAL)
+        self.log_text.delete("1.0", END)
+        self.log_text.configure(state=DISABLED)
 
     def save_settings(self):
         try:
@@ -480,6 +596,7 @@ class SettingsApp:
         save_config(self.config)
         self.hotkeys.update_config(self.config)
         self.status_var.set("Settings saved.")
+        self.log("Settings saved and hotkeys re-registered.")
 
     def process_events(self):
         while True:
@@ -496,6 +613,9 @@ class SettingsApp:
                 self.status_var.set(payload)
             elif event == "error":
                 self.status_var.set(payload)
+                self.append_log(f"ERROR: {payload}")
+            elif event == "log":
+                self.append_log(payload)
             elif event == "image_result":
                 image_path, result = payload
                 ResultWindow(self.root, "Image result", image_path, result)
@@ -508,28 +628,45 @@ class SettingsApp:
         self.root.after(120, self.process_events)
 
     def hide_window(self):
-        self.root.withdraw()
-        self.status_var.set("Running in background. Re-run app to show settings.")
+        self.root.iconify()
+        self.status_var.set("Minimized to taskbar. Hotkeys are still active.")
+        self.log("Settings window minimized to taskbar. Use Exit button to quit.")
+
+    def exit_app(self):
+        self.log("Exit requested.")
+        self.hotkeys.stop()
+        self.root.destroy()
 
     def capture_image(self):
         self.status_var.set("Select image area.")
+        self.log("Image capture requested. Waiting for area selection.")
         SelectionOverlay(self.root, self.finish_image_capture)
 
     def capture_video(self):
         self.status_var.set("Select video area.")
+        self.log("Video capture requested. Waiting for area selection.")
         SelectionOverlay(self.root, self.finish_video_capture)
 
     def finish_image_capture(self, box):
         def worker():
+            total_start = time.perf_counter()
             timestamp = time.strftime("%Y%m%d_%H%M%S")
             image_path = CAPTURE_DIR / f"capture_{timestamp}.png"
+            self.log(f"Image area selected: {box[2] - box[0]}x{box[3] - box[1]}.")
+
+            capture_start = time.perf_counter()
             ImageGrab.grab(bbox=box).save(image_path)
+            self.log(f"Image capture+save: {time.perf_counter() - capture_start:.2f}s -> {image_path.name}")
 
             try:
+                api_start = time.perf_counter()
                 result = post_image(self.config["server_url"], "/predict", image_path)
+                self.log(f"Image API /predict: {time.perf_counter() - api_start:.2f}s")
             except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
                 result = {"error": f"Analysis request failed: {exc}"}
+                self.log(f"Image API failed: {exc}")
 
+            self.log(f"Image workflow total: {time.perf_counter() - total_start:.2f}s")
             self.events.put(("image_result", (image_path, result)))
 
         threading.Thread(target=worker, daemon=True).start()
@@ -537,26 +674,27 @@ class SettingsApp:
 
     def finish_video_capture(self, box):
         def worker():
+            total_start = time.perf_counter()
             timestamp = time.strftime("%Y%m%d_%H%M%S")
             seconds = int(self.config["video_seconds"])
             fps = int(self.config["video_fps"])
             delay = 1 / fps
             frames = []
-            frame_paths = []
             end_time = time.time() + seconds
             index = 0
+            self.log(f"Video area selected: {box[2] - box[0]}x{box[3] - box[1]}, target={seconds}s @ {fps} FPS.")
 
+            capture_start = time.perf_counter()
             while time.time() < end_time:
                 frame = ImageGrab.grab(bbox=box).convert("RGB")
                 frames.append(frame)
-                frame_path = CAPTURE_DIR / f"video_{timestamp}_{index:03d}.png"
-                frame.save(frame_path)
-                frame_paths.append(frame_path)
                 index += 1
                 time.sleep(delay)
+            self.log(f"Video frame capture: {time.perf_counter() - capture_start:.2f}s, frames={len(frames)}")
 
             gif_path = CAPTURE_DIR / f"video_{timestamp}.gif"
             if frames:
+                gif_start = time.perf_counter()
                 frames[0].save(
                     gif_path,
                     save_all=True,
@@ -564,16 +702,34 @@ class SettingsApp:
                     duration=int(delay * 1000),
                     loop=0,
                 )
+                self.log(f"GIF preview save: {time.perf_counter() - gif_start:.2f}s -> {gif_path.name}")
+
+            encode_start = time.perf_counter()
+            frame_payloads = []
+            for frame_index, frame in enumerate(frames):
+                buffer = io.BytesIO()
+                frame.save(buffer, format="PNG")
+                frame_payloads.append((f"frame_{frame_index:03d}.png", buffer.getvalue()))
+            self.log(f"Frame PNG encode: {time.perf_counter() - encode_start:.2f}s, payloads={len(frame_payloads)}")
+
+            def analyze_frame(payload):
+                file_name, content = payload
+                try:
+                    return post_image_bytes(self.config["server_url"], "/predict-frame", file_name, content)
+                except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
+                    return None
 
             scores = []
-            for frame_path in frame_paths:
-                try:
-                    frame_result = post_image(self.config["server_url"], "/predict-frame", frame_path)
-                except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
-                    continue
+            api_start = time.perf_counter()
+            max_workers = min(4, max(1, len(frame_payloads)))
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+                for frame_result in executor.map(analyze_frame, frame_payloads):
+                    if not frame_result:
+                        continue
 
-                if "suspicious_score" in frame_result:
-                    scores.append(float(frame_result["suspicious_score"]))
+                    if "suspicious_score" in frame_result:
+                        scores.append(float(frame_result["suspicious_score"]))
+            self.log(f"Video API /predict-frame batch: {time.perf_counter() - api_start:.2f}s, analyzed={len(scores)}/{len(frame_payloads)}, workers={max_workers}")
 
             if scores:
                 avg = sum(scores) / len(scores)
@@ -585,7 +741,9 @@ class SettingsApp:
                 }
             else:
                 result = {"error": "No video frames could be analyzed."}
+                self.log("Video analysis failed: no frame scores returned.")
 
+            self.log(f"Video workflow total: {time.perf_counter() - total_start:.2f}s")
             self.events.put(("video_result", (gif_path, result)))
 
         threading.Thread(target=worker, daemon=True).start()

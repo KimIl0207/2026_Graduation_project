@@ -22,6 +22,7 @@ MODEL_KEYS = {
     "sd": "sd",
     "mj": "midjourney",
     "bg": "biggan",
+    "merged": "merged",
 }
 
 
@@ -51,6 +52,44 @@ def confidence_level(score, disagreement):
     return "low"
 
 
+def predict_with_merged_model(image, input_tensor, models_dict, include_grad_cam):
+    model = models_dict["merged"]
+    with torch.no_grad():
+        merged_prob = torch.sigmoid(model(input_tensor)).item()
+
+    confidence = confidence_level(merged_prob, 0.0)
+    label = (
+        "Suspicious AI-like Image"
+        if merged_prob >= 0.5
+        else "Likely Real Image"
+    )
+
+    grad_cam = None
+    if include_grad_cam:
+        grad_cam = generate_grad_cam(
+            image=image,
+            input_tensor=input_tensor,
+            model=model,
+            model_key="merged",
+        )
+
+    return {
+        "label": label,
+        "suspicious_score": round(merged_prob, 4),
+        "confidence": confidence,
+        "model_probs": {
+            "sd": round(merged_prob, 4),
+            "mj": round(merged_prob, 4),
+            "bg": round(merged_prob, 4),
+        },
+        "signals": {
+            "model_fusion": round(merged_prob, 4),
+            "model_disagreement": 0.0,
+        },
+        "grad_cam": grad_cam,
+    }
+
+
 def predict_image(image_bytes, models_dict, mode="image", include_grad_cam=True):
     image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     if image.size[0] < 224 or image.size[1] < 224:
@@ -63,6 +102,9 @@ def predict_image(image_bytes, models_dict, mode="image", include_grad_cam=True)
         raise ValueError("Invalid mode")
 
     input_tensor = input_tensor.unsqueeze(0)
+
+    if models_dict.get("mode") == "merged":
+        return predict_with_merged_model(image, input_tensor, models_dict, include_grad_cam)
 
     sd_model = models_dict["sd"]
     mj_model = models_dict["midjourney"]
