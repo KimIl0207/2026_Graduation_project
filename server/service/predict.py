@@ -18,91 +18,44 @@ video_transform = transforms.Compose([
     transforms.ToTensor(),
 ])
 
-MODEL_WEIGHTS = {
-    "sdxl": 0.4,
-}
-
-
-def get_model_weight(model_key):
-    return MODEL_WEIGHTS.get(model_key, 1.0)
-
-
 def _as_prob_list(probs):
     if len(probs) == 1 and isinstance(probs[0], (list, tuple)):
         return list(probs[0])
     return list(probs)
 
 
-def fuse_model_probs(*probs, weights=None):
+def fuse_model_probs(*probs):
     """Combine detector outputs into one AI-like suspicious score."""
     if len(probs) == 1 and isinstance(probs[0], dict):
         probs = list(probs[0].values())
     else:
         probs = _as_prob_list(probs)
 
-    weights = weights or [1.0] * len(probs)
-    weighted_probs = [prob * weight for prob, weight in zip(probs, weights)]
-    weighted_max = max(weighted_probs)
-    weighted_avg = sum(weighted_probs) / sum(weights)
-    return weighted_max * 0.7 + weighted_avg * 0.3
+    if not probs:
+        return 0.0
+
+    return max(probs)
 
 
-def model_disagreement(*probs):
-    """Measure how far the detector opinions are spread apart."""
-    probs = _as_prob_list(probs)
-    return max(probs) - min(probs)
-
-
-def confidence_level(score, disagreement):
-    """Estimate confidence from score strength and model agreement."""
-    is_clear_score = score >= 0.75 or score <= 0.25
-    is_moderate_score = score >= 0.6 or score <= 0.4
-
-    if disagreement <= 0.25 and is_clear_score:
-        return "high"
-    if disagreement <= 0.5 and is_moderate_score:
-        return "medium"
-    return "low"
-
-
-def has_sdxl_spike(probs):
-    return probs.get("sdxl", 0.0) >= 0.9
+def confidence_level():
+    return "ADAM 판단"
 
 
 def _label_for_score(score, force_ai=False):
     return "Suspicious AI-like Image" if score >= 0.5 or force_ai else "Likely Real Image"
 
 
-def _predict_merged(image, input_tensor, models_dict, include_grad_cam):
-    model = models_dict["merged"]
+def _predict_model_prob(model, image, input_tensor):
+    if hasattr(model, "predict_prob"):
+        return model.predict_prob(image)
+    return torch.sigmoid(model(input_tensor)).item()
 
-    with torch.no_grad():
-        merged_prob = torch.sigmoid(model(input_tensor)).item()
 
-    grad_cam = None
-    if include_grad_cam:
-        grad_cam = generate_grad_cam(
-            image=image,
-            input_tensor=input_tensor,
-            model=model,
-            model_key="merged",
-        )
-
+def _grad_cam_model_items(model_items):
     return {
-        "label": _label_for_score(merged_prob),
-        "suspicious_score": round(merged_prob, 4),
-        "confidence": confidence_level(merged_prob, 0.0),
-        "model_probs": {
-            "sd": round(merged_prob, 4),
-            "mj": round(merged_prob, 4),
-            "bg": round(merged_prob, 4),
-        },
-        "signals": {
-            "model_fusion": round(merged_prob, 4),
-            "model_disagreement": 0.0,
-            "sdxl_spike": False,
-        },
-        "grad_cam": grad_cam,
+        model_key: model
+        for model_key, model in model_items.items()
+        if hasattr(model, "features")
     }
 
 
@@ -115,37 +68,39 @@ def _predict_ensemble(image, input_tensor, models_dict, include_grad_cam):
 
     with torch.no_grad():
         probs = {
-            model_key: torch.sigmoid(model(input_tensor)).item()
+            model_key: _predict_model_prob(model, image, input_tensor)
             for model_key, model in model_items.items()
         }
 
-    weights = [get_model_weight(model_key) for model_key in probs.keys()]
-    suspicious_score = fuse_model_probs(*probs.values(), weights=weights)
-    disagreement = model_disagreement(*probs.values())
-    sdxl_spike = has_sdxl_spike(probs)
+    suspicious_score = fuse_model_probs(*probs.values())
 
     grad_cam = None
     if include_grad_cam:
-        explanation_model_key = max(probs, key=probs.get)
-        grad_cam = generate_grad_cam(
-            image=image,
-            input_tensor=input_tensor,
-            model=model_items[explanation_model_key],
-            model_key=explanation_model_key,
-        )
+        cam_models = _grad_cam_model_items(model_items)
+        cam_probs = {
+            model_key: prob
+            for model_key, prob in probs.items()
+            if model_key in cam_models
+        }
+        if cam_probs:
+            explanation_model_key = max(cam_probs, key=cam_probs.get)
+            grad_cam = generate_grad_cam(
+                image=image,
+                input_tensor=input_tensor,
+                model=cam_models[explanation_model_key],
+                model_key=explanation_model_key,
+            )
 
     return {
-        "label": _label_for_score(suspicious_score, force_ai=sdxl_spike),
+        "label": _label_for_score(suspicious_score),
         "suspicious_score": round(suspicious_score, 4),
-        "confidence": confidence_level(suspicious_score, disagreement),
+        "confidence": confidence_level(),
         "model_probs": {
             model_key: round(prob, 4)
             for model_key, prob in probs.items()
         },
         "signals": {
             "model_fusion": round(suspicious_score, 4),
-            "model_disagreement": round(disagreement, 4),
-            "sdxl_spike": sdxl_spike,
         },
         "grad_cam": grad_cam,
     }
@@ -164,9 +119,6 @@ def predict_image(image_bytes, models_dict, mode="image", include_grad_cam=True)
         raise ValueError("Invalid mode")
 
     input_tensor = input_tensor.unsqueeze(0)
-
-    if models_dict.get("mode") == "merged":
-        return _predict_merged(image, input_tensor, models_dict, include_grad_cam)
 
     return _predict_ensemble(image, input_tensor, models_dict, include_grad_cam)
 

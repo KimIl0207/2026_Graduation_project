@@ -25,6 +25,9 @@ async def save_correction(
     sd_prob: Optional[float] = Form(None),
     mj_prob: Optional[float] = Form(None),
     bg_prob: Optional[float] = Form(None),
+    sd3_prob: Optional[float] = Form(None),
+    dalle3_prob: Optional[float] = Form(None),
+    univfd_prob: Optional[float] = Form(None),
 ):
     prediction = {
         "predicted_label": predicted_label,
@@ -33,6 +36,9 @@ async def save_correction(
         "sd_prob": sd_prob,
         "mj_prob": mj_prob,
         "bg_prob": bg_prob,
+        "sd3_prob": sd3_prob,
+        "dalle3_prob": dalle3_prob,
+        "univfd_prob": univfd_prob,
         "source": "save-correction",
     }
     return save_correction_file(file, correct_label, prediction)

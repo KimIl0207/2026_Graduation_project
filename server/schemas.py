@@ -16,18 +16,16 @@ class RootResponse(BaseModel):
 
 
 class ModelProbs(BaseModel):
-    sd: float = Field(..., description="Stable Diffusion detector sigmoid probability.")
-    mj: float = Field(..., description="Midjourney detector sigmoid probability.")
-    bg: float = Field(..., description="BigGAN detector sigmoid probability.")
+    sd: Optional[float] = Field(None, description="Stable Diffusion detector sigmoid probability.")
+    mj: Optional[float] = Field(None, description="Midjourney detector sigmoid probability.")
+    bg: Optional[float] = Field(None, description="BigGAN detector sigmoid probability.")
     sd3: Optional[float] = Field(None, description="Stable Diffusion 3 detector sigmoid probability.")
-    sdxl: Optional[float] = Field(None, description="SDXL detector sigmoid probability.")
     dalle3: Optional[float] = Field(None, description="DALL-E 3 detector sigmoid probability.")
+    univfd: Optional[float] = Field(None, description="UnivFD CLIP linear-probe sigmoid probability.")
 
 
 class PredictionSignals(BaseModel):
-    model_fusion: float = Field(..., description="Final fused suspicious score.")
-    model_disagreement: float = Field(..., description="max(prob) - min(prob).")
-    sdxl_spike: Optional[bool] = Field(None, description="Whether SDXL detector produced a strong spike.")
+    model_fusion: float = Field(..., description="Final suspicious score.")
 
 
 class GradCamResponse(BaseModel):
@@ -40,7 +38,7 @@ class ImagePredictionResponse(BaseModel):
     filename: str = Field(..., description="Uploaded source filename.")
     label: str = Field(..., description="Final prediction label.")
     suspicious_score: float = Field(..., description="AI-like suspicious score from 0 to 1.")
-    confidence: str = Field(..., description="Prediction confidence: high, medium, or low.")
+    confidence: str = Field(..., description="Prediction confidence display code.")
     model_probs: ModelProbs = Field(..., description="Raw detector probabilities.")
     signals: PredictionSignals = Field(..., description="Supporting prediction signals.")
     grad_cam: Optional[GradCamResponse] = Field(None, description="Optional Grad-CAM explanation.")
