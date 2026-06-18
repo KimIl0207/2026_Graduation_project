@@ -25,12 +25,12 @@ python main.py
 - Image capture hotkey: `Ctrl+Shift+I`
 - Video capture hotkey: `Ctrl+Shift+V`
 - Server URL: `http://localhost:8000`
-- Video capture: 5 seconds at 4 FPS
+- Video capture: 5 seconds at 1 FPS
 
 ## Notes
 
 - Drag an area after pressing a hotkey.
 - Image capture calls `/predict`.
-- Video capture records a GIF preview, analyzes sampled frames with `/predict-frame`, and averages the score.
+- Video capture records a GIF preview, sends sampled frames to `/predict_images`, and averages the score.
 - Captures are saved under `execution/captures`.
 - Settings are saved in `execution/settings.json`.

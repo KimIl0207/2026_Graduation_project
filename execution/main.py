@@ -1,201 +1,33 @@
-import concurrent.futures
-import ctypes
-import io
-import json
-import os
 import queue
-import sys
 import threading
 import time
-import urllib.error
-import urllib.request
-from ctypes import wintypes
-from dataclasses import dataclass
 from pathlib import Path
 
 
-if getattr(sys, "frozen", False):
-    runtime_dir = Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
-    sys.path.insert(0, str(runtime_dir))
-    os.environ.setdefault("TCL_LIBRARY", str(runtime_dir / "tcl" / "tcl8.6"))
-    os.environ.setdefault("TK_LIBRARY", str(runtime_dir / "tcl" / "tk8.6"))
+from config import configure_frozen_runtime
+
+
+configure_frozen_runtime()
 
 
 from tkinter import BOTH, BOTTOM, DISABLED, END, LEFT, NORMAL, RIGHT, TOP, Canvas, Entry, Frame, Label, Scrollbar, StringVar, Text, Tk, Toplevel, messagebox
 from tkinter import ttk
 
-from PIL import Image, ImageGrab, ImageTk
+from PIL import Image, ImageTk
 
-
-APP_NAME = "ADAM Capture"
-APP_DIR = Path(sys.executable).parent if getattr(sys, "frozen", False) else Path(__file__).parent
-CONFIG_PATH = APP_DIR / "settings.json"
-CAPTURE_DIR = APP_DIR / "captures"
-ASSET_DIR = APP_DIR / "assets"
-SOURCE_ASSET_DIR = Path(__file__).resolve().parents[1] / "front" / "public"
-
-WM_HOTKEY = 0x0312
-MOD_ALT = 0x0001
-MOD_CONTROL = 0x0002
-MOD_SHIFT = 0x0004
-MOD_WIN = 0x0008
-HOTKEY_IMAGE_ID = 101
-HOTKEY_VIDEO_ID = 102
-
-DEFAULT_CONFIG = {
-    "server_url": "http://localhost:8000",
-    "image_hotkey": "Ctrl+Shift+I",
-    "video_hotkey": "Ctrl+Shift+V",
-    "video_seconds": 5,
-    "video_fps": 4,
-}
-
-
-def get_asset_path(name):
-    bundled = ASSET_DIR / name
-    if bundled.exists():
-        return bundled
-
-    source = SOURCE_ASSET_DIR / name
-    if source.exists():
-        return source
-
-    return None
-
-
-def enable_dpi_awareness():
-    try:
-        ctypes.windll.shcore.SetProcessDpiAwareness(2)
-    except Exception:
-        try:
-            ctypes.windll.user32.SetProcessDPIAware()
-        except Exception:
-            pass
-
-
-def apply_window_icon(window):
-    ico_path = get_asset_path("favicon.ico")
-    png_path = get_asset_path("adam-icon.png")
-
-    try:
-        if ico_path:
-            window.iconbitmap(str(ico_path))
-            return
-    except Exception:
-        pass
-
-    try:
-        if png_path:
-            icon = ImageTk.PhotoImage(Image.open(png_path))
-            window.iconphoto(True, icon)
-            window._adam_icon_ref = icon
-    except Exception:
-        pass
-
-
-@dataclass
-class Hotkey:
-    modifiers: int
-    vk: int
-
-
-def load_config():
-    if not CONFIG_PATH.exists():
-        return DEFAULT_CONFIG.copy()
-
-    try:
-        with CONFIG_PATH.open("r", encoding="utf-8") as f:
-            data = json.load(f)
-    except (OSError, json.JSONDecodeError):
-        return DEFAULT_CONFIG.copy()
-
-    config = DEFAULT_CONFIG.copy()
-    config.update({k: v for k, v in data.items() if k in config})
-    return config
-
-
-def save_config(config):
-    CONFIG_PATH.write_text(json.dumps(config, indent=2), encoding="utf-8")
-
-
-def parse_hotkey(value):
-    parts = [part.strip().upper() for part in value.split("+") if part.strip()]
-    if not parts:
-        raise ValueError("Hotkey is empty.")
-
-    modifiers = 0
-    key = None
-
-    for part in parts:
-        if part in {"CTRL", "CONTROL"}:
-            modifiers |= MOD_CONTROL
-        elif part == "ALT":
-            modifiers |= MOD_ALT
-        elif part == "SHIFT":
-            modifiers |= MOD_SHIFT
-        elif part in {"WIN", "WINDOWS"}:
-            modifiers |= MOD_WIN
-        else:
-            key = part
-
-    if not key:
-        raise ValueError("Hotkey needs a key, for example Ctrl+Shift+I.")
-
-    if len(key) == 1:
-        vk = ord(key)
-    elif key.startswith("F") and key[1:].isdigit():
-        num = int(key[1:])
-        if not 1 <= num <= 24:
-            raise ValueError("Function key must be F1 through F24.")
-        vk = 0x70 + num - 1
-    else:
-        raise ValueError("Use a letter, number, or F1-F24 as the final key.")
-
-    return Hotkey(modifiers, vk)
-
-
-def build_multipart(field_name, file_path, mime_type):
-    return build_multipart_bytes(
-        field_name,
-        Path(file_path).name,
-        Path(file_path).read_bytes(),
-        mime_type,
-    )
-
-
-def build_multipart_bytes(field_name, file_name, content, mime_type):
-    boundary = f"----ADAMBoundary{int(time.time() * 1000)}"
-    body = io.BytesIO()
-    body.write(f"--{boundary}\r\n".encode())
-    body.write(
-        f'Content-Disposition: form-data; name="{field_name}"; filename="{file_name}"\r\n'.encode()
-    )
-    body.write(f"Content-Type: {mime_type}\r\n\r\n".encode())
-    body.write(content)
-    body.write(f"\r\n--{boundary}--\r\n".encode())
-    return body.getvalue(), f"multipart/form-data; boundary={boundary}"
-
-
-def post_image(server_url, endpoint, file_path):
-    body, content_type = build_multipart("file", file_path, "image/png")
-    return post_multipart(server_url, endpoint, body, content_type)
-
-
-def post_image_bytes(server_url, endpoint, file_name, content):
-    body, content_type = build_multipart_bytes("file", file_name, content, "image/png")
-    return post_multipart(server_url, endpoint, body, content_type)
-
-
-def post_multipart(server_url, endpoint, body, content_type):
-    request = urllib.request.Request(
-        f"{server_url.rstrip('/')}{endpoint}",
-        data=body,
-        headers={"Content-Type": content_type},
-        method="POST",
-    )
-
-    with urllib.request.urlopen(request, timeout=120) as response:
-        return json.loads(response.read().decode("utf-8"))
+from capture_tasks import capture_image as capture_image_task
+from capture_tasks import capture_video as capture_video_task
+from config import (
+    APP_NAME,
+    CAPTURE_DIR,
+    DEFAULT_CONFIG,
+    apply_window_icon,
+    enable_dpi_awareness,
+    get_asset_path,
+    load_config,
+    save_config,
+)
+from hotkeys import HotkeyThread, parse_hotkey
 
 
 def clamp_box(box):
@@ -206,73 +38,6 @@ def clamp_box(box):
         max(left, right),
         max(top, bottom),
     )
-
-
-class HotkeyThread(threading.Thread):
-    def __init__(self, event_queue, config):
-        super().__init__(daemon=True)
-        self.event_queue = event_queue
-        self.config = config
-        self.stop_event = threading.Event()
-        self.user32 = ctypes.windll.user32
-        self.thread_id = None
-
-    def update_config(self, config):
-        self.config = config
-        if self.thread_id:
-            self.user32.PostThreadMessageW(self.thread_id, 0x0400, 0, 0)
-
-    def stop(self):
-        self.stop_event.set()
-        if self.thread_id:
-            self.user32.PostThreadMessageW(self.thread_id, 0x0012, 0, 0)
-
-    def register_hotkeys(self):
-        self.user32.UnregisterHotKey(None, HOTKEY_IMAGE_ID)
-        self.user32.UnregisterHotKey(None, HOTKEY_VIDEO_ID)
-
-        image_hotkey = parse_hotkey(self.config["image_hotkey"])
-        video_hotkey = parse_hotkey(self.config["video_hotkey"])
-
-        ok_image = self.user32.RegisterHotKey(
-            None, HOTKEY_IMAGE_ID, image_hotkey.modifiers, image_hotkey.vk
-        )
-        ok_video = self.user32.RegisterHotKey(
-            None, HOTKEY_VIDEO_ID, video_hotkey.modifiers, video_hotkey.vk
-        )
-
-        if not ok_image or not ok_video:
-            raise RuntimeError("Could not register one or more hotkeys.")
-
-    def run(self):
-        self.thread_id = ctypes.windll.kernel32.GetCurrentThreadId()
-
-        try:
-            self.register_hotkeys()
-            self.event_queue.put(("status", "Hotkeys active."))
-        except Exception as exc:
-            self.event_queue.put(("error", str(exc)))
-
-        msg = wintypes.MSG()
-        while not self.stop_event.is_set():
-            result = self.user32.GetMessageW(ctypes.byref(msg), None, 0, 0)
-            if result == 0:
-                break
-
-            if msg.message == WM_HOTKEY:
-                if msg.wParam == HOTKEY_IMAGE_ID:
-                    self.event_queue.put(("capture_image", None))
-                elif msg.wParam == HOTKEY_VIDEO_ID:
-                    self.event_queue.put(("capture_video", None))
-            elif msg.message == 0x0400:
-                try:
-                    self.register_hotkeys()
-                    self.event_queue.put(("status", "Hotkeys updated."))
-                except Exception as exc:
-                    self.event_queue.put(("error", str(exc)))
-
-        self.user32.UnregisterHotKey(None, HOTKEY_IMAGE_ID)
-        self.user32.UnregisterHotKey(None, HOTKEY_VIDEO_ID)
 
 
 class SelectionOverlay:
@@ -650,19 +415,16 @@ class SettingsApp:
     def finish_image_capture(self, box):
         def worker():
             total_start = time.perf_counter()
-            timestamp = time.strftime("%Y%m%d_%H%M%S")
-            image_path = CAPTURE_DIR / f"capture_{timestamp}.png"
             self.log(f"Image area selected: {box[2] - box[0]}x{box[3] - box[1]}.")
 
-            capture_start = time.perf_counter()
-            ImageGrab.grab(bbox=box).save(image_path)
-            self.log(f"Image capture+save: {time.perf_counter() - capture_start:.2f}s -> {image_path.name}")
-
             try:
-                api_start = time.perf_counter()
-                result = post_image(self.config["server_url"], "/predict", image_path)
-                self.log(f"Image API /predict: {time.perf_counter() - api_start:.2f}s")
-            except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+                image_path, result = capture_image_task(
+                    box,
+                    CAPTURE_DIR,
+                    self.config["server_url"],
+                )
+            except Exception as exc:
+                image_path = None
                 result = {"error": f"Analysis request failed: {exc}"}
                 self.log(f"Image API failed: {exc}")
 
@@ -675,73 +437,21 @@ class SettingsApp:
     def finish_video_capture(self, box):
         def worker():
             total_start = time.perf_counter()
-            timestamp = time.strftime("%Y%m%d_%H%M%S")
             seconds = int(self.config["video_seconds"])
             fps = int(self.config["video_fps"])
-            delay = 1 / fps
-            frames = []
-            end_time = time.time() + seconds
-            index = 0
             self.log(f"Video area selected: {box[2] - box[0]}x{box[3] - box[1]}, target={seconds}s @ {fps} FPS.")
 
-            capture_start = time.perf_counter()
-            while time.time() < end_time:
-                frame = ImageGrab.grab(bbox=box).convert("RGB")
-                frames.append(frame)
-                index += 1
-                time.sleep(delay)
-            self.log(f"Video frame capture: {time.perf_counter() - capture_start:.2f}s, frames={len(frames)}")
-
-            gif_path = CAPTURE_DIR / f"video_{timestamp}.gif"
-            if frames:
-                gif_start = time.perf_counter()
-                frames[0].save(
-                    gif_path,
-                    save_all=True,
-                    append_images=frames[1:],
-                    duration=int(delay * 1000),
-                    loop=0,
+            try:
+                gif_path, result = capture_video_task(
+                    box,
+                    CAPTURE_DIR,
+                    self.config["server_url"],
+                    int(self.config["video_seconds"]),
+                    int(self.config["video_fps"]),
                 )
-                self.log(f"GIF preview save: {time.perf_counter() - gif_start:.2f}s -> {gif_path.name}")
-
-            encode_start = time.perf_counter()
-            frame_payloads = []
-            for frame_index, frame in enumerate(frames):
-                buffer = io.BytesIO()
-                frame.save(buffer, format="PNG")
-                frame_payloads.append((f"frame_{frame_index:03d}.png", buffer.getvalue()))
-            self.log(f"Frame PNG encode: {time.perf_counter() - encode_start:.2f}s, payloads={len(frame_payloads)}")
-
-            def analyze_frame(payload):
-                file_name, content = payload
-                try:
-                    return post_image_bytes(self.config["server_url"], "/predict-frame", file_name, content)
-                except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
-                    return None
-
-            scores = []
-            api_start = time.perf_counter()
-            max_workers = min(4, max(1, len(frame_payloads)))
-            with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-                for frame_result in executor.map(analyze_frame, frame_payloads):
-                    if not frame_result:
-                        continue
-
-                    if "suspicious_score" in frame_result:
-                        scores.append(float(frame_result["suspicious_score"]))
-            self.log(f"Video API /predict-frame batch: {time.perf_counter() - api_start:.2f}s, analyzed={len(scores)}/{len(frame_payloads)}, workers={max_workers}")
-
-            if scores:
-                avg = sum(scores) / len(scores)
-                result = {
-                    "label": "Suspicious AI-like Video" if avg >= 0.5 else "Likely Real Video",
-                    "suspicious_score": round(avg, 4),
-                    "frame_count": len(scores),
-                    "frame_predictions": [round(score, 4) for score in scores],
-                }
-            else:
-                result = {"error": "No video frames could be analyzed."}
-                self.log("Video analysis failed: no frame scores returned.")
+            except Exception as exc:
+                gif_path = None
+                result = {"error": f"Video analysis request failed: {exc}"}
 
             self.log(f"Video workflow total: {time.perf_counter() - total_start:.2f}s")
             self.events.put(("video_result", (gif_path, result)))

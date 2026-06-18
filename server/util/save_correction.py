@@ -38,6 +38,7 @@ def save_correction_file(file, correct_label, prediction=None):
         "selected_generator_model": prediction.get("selected_generator_model"),
         "sd_prob": prediction.get("sd_prob"),
         "mj_prob": prediction.get("mj_prob"),
+        "mj6_prob": prediction.get("mj6_prob"),
         "bg_prob": prediction.get("bg_prob"),
         "sd3_prob": prediction.get("sd3_prob"),
         "dalle3_prob": prediction.get("dalle3_prob"),

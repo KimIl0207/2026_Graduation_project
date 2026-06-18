@@ -20,6 +20,10 @@ from util.kakao import (
 router = APIRouter()
 
 
+def format_score(score):
+    return f"{float(score):.2f}"
+
+
 @router.post("/kakao/detect")
 async def kakao_detect(req: Request):
     body = await req.json()
@@ -41,14 +45,14 @@ async def kakao_detect(req: Request):
                 return kakao_response(f"영상 감지 실패: {result['error']}", QUICK_REPLY_RESTART)
 
             label = result.get("label", "Unknown")
-            prob = result.get("suspicious_score", 0)
+            suspicious_score = result.get("suspicious_score", 0)
             frame_count = result.get("frame_count", 0)
 
             text = (
                 "영상 감지 결과\n\n"
                 f"결과: {label}\n"
-                f"의심 점수: {prob:.2f}\n"
-                f"분석된 프레임: {frame_count}\n\n"
+                f"의심 점수: {format_score(suspicious_score)}\n"
+                f"분석 프레임: {frame_count}\n\n"
                 "다른 텍스트, 이미지, 또는 영상을 보내주세요."
             )
             return kakao_response(text, QUICK_REPLY_RESTART)
@@ -63,14 +67,14 @@ async def kakao_detect(req: Request):
             result = predict_image(image_bytes, models_dict)
 
             label = result.get("label", "Unknown")
-            prob = result.get("suspicious_score", 0)
+            suspicious_score = result.get("suspicious_score", 0)
             confidence = result.get("confidence", "")
             confidence_text = f"\nConfidence: {confidence}" if confidence else ""
 
             text = (
                 "이미지 감지 결과\n\n"
                 f"결과: {label}\n"
-                f"의심 점수: {prob:.2f}"
+                f"의심 점수: {format_score(suspicious_score)}"
                 f"{confidence_text}\n\n"
                 "다른 콘텐츠를 보내주세요."
             )
@@ -85,13 +89,13 @@ async def kakao_detect(req: Request):
             detector = get_text_detector()
             result = detector.detect(utterance)
 
-            prob = result.get("final_ai_prob", 0)
-            label = "Likely AI-written" if prob > 60 else "Likely human-written"
+            final_ai_prob = result.get("final_ai_prob", 0)
+            label = "Likely AI-written" if final_ai_prob > 60 else "Likely human-written"
 
             text = (
                 "텍스트 감지 결과\n\n"
                 f"결과: {label}\n"
-                f"확률: {prob:.2f}%\n\n"
+                f"AI 확률: {format_score(final_ai_prob)}%\n\n"
                 "다른 콘텐츠를 보내주세요."
             )
             return kakao_response(text, QUICK_REPLY_RESTART)

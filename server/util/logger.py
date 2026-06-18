@@ -17,6 +17,7 @@ def save_log(data):
         "selected_generator_model": data.get("selected_generator_model"),
         "sd_prob": data.get("sd_prob"),
         "mj_prob": data.get("mj_prob"),
+        "mj6_prob": data.get("mj6_prob"),
         "bg_prob": data.get("bg_prob"),
         "sd3_prob": data.get("sd3_prob"),
         "dalle3_prob": data.get("dalle3_prob"),
