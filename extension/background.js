@@ -149,62 +149,10 @@ async function handleTextAnalysis(text, signal) {
   return await response.json();
 }
 
-// ** 수정됨 ** 실제 백엔드 API 서버와 통신하는 함수 (비디오용)
-async function handleVideoAnalysis(videoDataUrl, signal) {
-  const storageData = await chrome.storage.local.get(['serverUrl']);
-  const serverUrl = storageData.serverUrl;
-  if (!serverUrl) throw new Error("서버 주소가 설정되지 않았습니다. 옵션에서 주소를 입력해주세요.");
-
-  const byteString = atob(videoDataUrl.split(',')[1]);
-  const mimeString = videoDataUrl.split(',')[0].split(':')[1].split(';')[0];
-  const ab = new ArrayBuffer(byteString.length);
-  const ia = new Uint8Array(ab);
-  for (let i = 0; i < byteString.length; i++) {
-    ia[i] = byteString.charCodeAt(i);
-  }
-  const blob = new Blob([ab], { type: mimeString });
-
-  const formData = new FormData();
-  formData.append("file", blob, "captured_video.webm");
-
-  // 백엔드 주소에 맞춰 /predict-video 로 변경
-  const response = await fetch(`${serverUrl}/predict-video`, {
-    method: "POST",
-    headers: { "ngrok-skip-browser-warning": "true" },
-    body: formData,
-    signal: signal
-  });
-
-  if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-  return await response.json();
-}
-
 // 5. ** 연결 준비중 ** 실제 백엔드 API 서버와 통신하는 함수 (비디오용)
 async function handleVideoAnalysis(videoDataUrl, signal) {
   const storageData = await chrome.storage.local.get(['serverUrl']);
   const serverUrl = storageData.serverUrl;
   if (!serverUrl) throw new Error("서버 주소가 설정되지 않았습니다. 옵션에서 주소를 입력해주세요.");
-
-  // [수정됨] 거대한 Base64 비디오 데이터를 안전하게 파일(Blob) 형태로 강제 변환
-  const byteString = atob(videoDataUrl.split(',')[1]);
-  const mimeString = videoDataUrl.split(',')[0].split(':')[1].split(';')[0];
-  const ab = new ArrayBuffer(byteString.length);
-  const ia = new Uint8Array(ab);
-  for (let i = 0; i < byteString.length; i++) {
-    ia[i] = byteString.charCodeAt(i);
-  }
-  const blob = new Blob([ab], { type: mimeString });
-
-  const formData = new FormData();
-  formData.append("file", blob, "captured_video.webm");
-
-  const response = await fetch(`${serverUrl}/predict_video`, {
-    method: "POST",
-    headers: { "ngrok-skip-browser-warning": "true" },
-    body: formData,
-    signal: signal
-  });
-
-  if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-  return await response.json();
+  throw new Error("확장프로그램 비디오 분석은 현재 지원하지 않습니다. 웹 화면의 Video Detection을 사용해주세요.");
 }

@@ -18,6 +18,9 @@ def save_log(data):
         "sd_prob": data.get("sd_prob"),
         "mj_prob": data.get("mj_prob"),
         "bg_prob": data.get("bg_prob"),
+        "sd3_prob": data.get("sd3_prob"),
+        "dalle3_prob": data.get("dalle3_prob"),
+        "univfd_prob": data.get("univfd_prob"),
         "source": data.get("source", "unknown"),
         "created_at": datetime.now(timezone.utc).isoformat()
     }

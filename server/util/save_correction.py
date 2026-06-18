@@ -39,6 +39,9 @@ def save_correction_file(file, correct_label, prediction=None):
         "sd_prob": prediction.get("sd_prob"),
         "mj_prob": prediction.get("mj_prob"),
         "bg_prob": prediction.get("bg_prob"),
+        "sd3_prob": prediction.get("sd3_prob"),
+        "dalle3_prob": prediction.get("dalle3_prob"),
+        "univfd_prob": prediction.get("univfd_prob"),
         "source": prediction.get("source", "save-correction"),
     })
 

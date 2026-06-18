@@ -9,7 +9,6 @@ from schemas import (
     TextRequest,
     VideoPredictionResponse,
 )
-from service.predic_video import predict_video as predict_video_file
 from service.predict import predict_image, predict_images
 from state import get_text_detector, models_dict
 
@@ -39,17 +38,6 @@ async def predict(file: UploadFile = File(...)):
 async def predict_frame(file: UploadFile = File(...)):
     image_bytes = await file.read()
     return predict_image(image_bytes, models_dict, mode="video", include_grad_cam=False)
-
-
-@router.post(
-    "/predict-video",
-    response_model=Union[VideoPredictionResponse, ErrorResponse],
-    response_model_exclude_none=True,
-    summary="Analyze video AI suspicious score",
-    tags=["Video Detection"],
-)
-async def predict_video(file: UploadFile = File(...)):
-    return await predict_video_file(file, models_dict)
 
 
 @router.post(
