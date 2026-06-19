@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -18,6 +18,7 @@ class RootResponse(BaseModel):
 class ModelProbs(BaseModel):
     sd: Optional[float] = Field(None, description="Stable Diffusion detector sigmoid probability.")
     mj: Optional[float] = Field(None, description="Midjourney detector sigmoid probability.")
+    mj6: Optional[float] = Field(None, description="Midjourney v6 detector sigmoid probability.")
     bg: Optional[float] = Field(None, description="BigGAN detector sigmoid probability.")
     sd3: Optional[float] = Field(None, description="Stable Diffusion 3 detector sigmoid probability.")
     dalle3: Optional[float] = Field(None, description="DALL-E 3 detector sigmoid probability.")
@@ -26,6 +27,8 @@ class ModelProbs(BaseModel):
 
 class PredictionSignals(BaseModel):
     model_fusion: float = Field(..., description="Final suspicious score.")
+    fusion_model_scores: Optional[Dict[str, float]] = Field(None, description="Detector scores after per-model fusion calibration.")
+    active_fusion_models: Optional[List[str]] = Field(None, description="Model keys used for final max fusion.")
 
 
 class GradCamResponse(BaseModel):

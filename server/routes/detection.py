@@ -9,7 +9,8 @@ from schemas import (
     TextRequest,
     VideoPredictionResponse,
 )
-from service.predict import predict_image, predict_images
+from service.predic_video import predict_video as predict_video_file
+from service.predict import predict_image, predict_image_scores, robust_frame_score
 from state import get_text_detector, models_dict
 
 
@@ -41,6 +42,17 @@ async def predict_frame(file: UploadFile = File(...)):
 
 
 @router.post(
+    "/predict-video",
+    response_model=Union[VideoPredictionResponse, ErrorResponse],
+    response_model_exclude_none=True,
+    summary="Analyze video AI suspicious score",
+    tags=["Video Detection"],
+)
+async def predict_video(file: UploadFile = File(...)):
+    return await predict_video_file(file, models_dict)
+
+
+@router.post(
     "/predict_images",
     response_model=VideoPredictionResponse,
     response_model_exclude_none=True,
@@ -49,13 +61,15 @@ async def predict_frame(file: UploadFile = File(...)):
 )
 async def predict_frame_images(files: list[UploadFile] = File(...)):
     image_bytes_list = [await file.read() for file in files]
-    average_suspicious_score = predict_images(image_bytes_list, models_dict)
+    frame_scores = predict_image_scores(image_bytes_list, models_dict)
+    average_suspicious_score = robust_frame_score(frame_scores)
     label = "Suspicious AI-like Video" if average_suspicious_score >= 0.5 else "Likely Real Video"
 
     return {
         "label": label,
         "suspicious_score": round(average_suspicious_score, 4),
-        "frame_count": len(image_bytes_list),
+        "frame_count": len(frame_scores),
+        "frame_predictions": [round(score, 4) for score in frame_scores],
     }
 
 

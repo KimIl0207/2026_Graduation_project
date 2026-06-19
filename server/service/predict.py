@@ -18,23 +18,43 @@ video_transform = transforms.Compose([
     transforms.ToTensor(),
 ])
 
-def _as_prob_list(probs):
-    if len(probs) == 1 and isinstance(probs[0], (list, tuple)):
-        return list(probs[0])
-    return list(probs)
+
+FUSION_MODEL_THRESHOLDS = {
+    "mj": 0.972,
+    "sd3": 0.85,
+    "mj6": 0.90,
+}
 
 
-def fuse_model_probs(*probs):
-    """Combine detector outputs into one AI-like suspicious score."""
-    if len(probs) == 1 and isinstance(probs[0], dict):
-        probs = list(probs[0].values())
-    else:
-        probs = _as_prob_list(probs)
+def calibrate_model_prob(model_key, prob):
+    threshold = FUSION_MODEL_THRESHOLDS.get(model_key)
+    if threshold is None:
+        return None
 
-    if not probs:
+    if prob < threshold:
+        return 0.5 * (prob / threshold)
+
+    if threshold >= 1.0:
+        return 1.0
+
+    return 0.5 + 0.5 * ((prob - threshold) / (1.0 - threshold))
+
+
+def calibrate_model_probs(probs):
+    return {
+        model_key: calibrated_prob
+        for model_key, prob in probs.items()
+        if (calibrated_prob := calibrate_model_prob(model_key, prob)) is not None
+    }
+
+
+def fuse_model_probs(probs):
+    """Use max over calibrated specialist detectors."""
+    calibrated_probs = calibrate_model_probs(probs)
+    if not calibrated_probs:
         return 0.0
 
-    return max(probs)
+    return max(calibrated_probs.values())
 
 
 def confidence_level():
@@ -72,7 +92,8 @@ def _predict_ensemble(image, input_tensor, models_dict, include_grad_cam):
             for model_key, model in model_items.items()
         }
 
-    suspicious_score = fuse_model_probs(*probs.values())
+    fusion_model_scores = calibrate_model_probs(probs)
+    suspicious_score = fuse_model_probs(probs)
 
     grad_cam = None
     if include_grad_cam:
@@ -101,6 +122,11 @@ def _predict_ensemble(image, input_tensor, models_dict, include_grad_cam):
         },
         "signals": {
             "model_fusion": round(suspicious_score, 4),
+            "fusion_model_scores": {
+                model_key: round(prob, 4)
+                for model_key, prob in fusion_model_scores.items()
+            },
+            "active_fusion_models": sorted(FUSION_MODEL_THRESHOLDS),
         },
         "grad_cam": grad_cam,
     }
@@ -124,11 +150,29 @@ def predict_image(image_bytes, models_dict, mode="image", include_grad_cam=True)
 
 
 def predict_images(image_bytes_list, models_dict):
+    results = predict_image_scores(image_bytes_list, models_dict)
+    return robust_frame_score(results)
+
+
+def robust_frame_score(scores):
+    """Average frame scores after damping one-off high/low outliers."""
+    if not scores:
+        return 0.0
+    if len(scores) < 3:
+        return sum(scores) / len(scores)
+
+    ordered = sorted(scores)
+    damped_scores = [ordered[1], *ordered[1:-1], ordered[-2]]
+    return sum(damped_scores) / len(damped_scores)
+
+
+def predict_image_scores(image_bytes_list, models_dict):
     results = []
     for image_bytes in image_bytes_list:
         result = predict_image(image_bytes, models_dict, mode="video", include_grad_cam=False)
-        results.append(result["suspicious_score"])
-    return sum(results) / len(results) if results else 0.0
+        if "suspicious_score" in result:
+            results.append(result["suspicious_score"])
+    return results
 
 
 def generate_grad_cam(image, input_tensor, model, model_key):
