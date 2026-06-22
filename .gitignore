@@ -53,3 +53,6 @@ py.py
 
 /execution/__pycache__
 /execution/captures
+execution/installer_dotnet/
+
+/server/routes/__pycache__

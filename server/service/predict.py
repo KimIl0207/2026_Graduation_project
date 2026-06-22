@@ -1,6 +1,7 @@
 import base64
 import io
 
+import cv2
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -222,6 +223,7 @@ def generate_grad_cam(image, input_tensor, model, model_key):
         heatmap = cam.squeeze().cpu().numpy()
 
         overlay_image = build_heatmap_overlay(display_image, heatmap)
+        focus = analyze_heatmap_focus(display_image, heatmap)
         buffer = io.BytesIO()
         overlay_image.save(buffer, format="PNG")
 
@@ -229,6 +231,7 @@ def generate_grad_cam(image, input_tensor, model, model_key):
             "model": model_key,
             "image_base64": base64.b64encode(buffer.getvalue()).decode("ascii"),
             "note": "Highlighted areas contributed most to the selected AI-generator score.",
+            "focus": focus,
         }
     finally:
         forward_handle.remove()
@@ -259,3 +262,164 @@ def build_heatmap_overlay(image, heatmap, alpha=0.45):
     overlay = original * (1.0 - heatmap_strength) + heatmap_rgb * heatmap_strength
     overlay = np.clip(overlay, 0, 255).astype(np.uint8)
     return Image.fromarray(overlay)
+
+
+def analyze_heatmap_focus(image, heatmap):
+    heatmap = np.clip(heatmap.astype(np.float32), 0.0, 1.0)
+    total_heat = float(heatmap.sum())
+    if total_heat <= 1e-6:
+        return {
+            "stage": "empty",
+            "interpretation": "히트맵 반응이 약해 범위를 판단하기 어렵습니다.",
+            "distribution": {
+                "entropy": 0.0,
+                "hot_area_ratio": 0.0,
+                "top_10_mass_ratio": 0.0,
+                "is_diffuse": False,
+            },
+            "person_detected": False,
+            "region_scores": {},
+        }
+
+    distribution = heatmap_distribution(heatmap, total_heat)
+    if distribution["is_diffuse"]:
+        return {
+            "stage": "diffuse",
+            "interpretation": "히트맵이 넓게 퍼져 있어 전체 이미지 생성 반응에 가깝습니다.",
+            "distribution": distribution,
+            "person_detected": False,
+            "region_scores": {},
+        }
+
+    detections = detect_person_regions(image)
+    if not detections["person_detected"]:
+        return {
+            "stage": "localized",
+            "interpretation": "특정 영역 중심 반응입니다. 사람 영역은 감지되지 않았습니다.",
+            "distribution": distribution,
+            "person_detected": False,
+            "region_scores": {
+                "localized": 1.0,
+            },
+        }
+
+    region_scores = heatmap_region_scores(heatmap, detections["masks"], total_heat)
+    primary_region = max(region_scores, key=region_scores.get) if region_scores else "unknown"
+    return {
+        "stage": "person_regions",
+        "interpretation": region_interpretation(primary_region),
+        "distribution": distribution,
+        "person_detected": True,
+        "region_scores": region_scores,
+        "detections": {
+            "face_count": len(detections["faces"]),
+            "body_count": len(detections["bodies"]),
+        },
+    }
+
+
+def heatmap_distribution(heatmap, total_heat):
+    flat = heatmap.reshape(-1)
+    probabilities = flat / (total_heat + 1e-8)
+    entropy = float(-(probabilities * np.log(probabilities + 1e-8)).sum() / np.log(len(flat)))
+    hot_area_ratio = float((heatmap >= 0.5).mean())
+    top_count = max(1, int(len(flat) * 0.1))
+    top_10_mass_ratio = float(np.partition(flat, -top_count)[-top_count:].sum() / (total_heat + 1e-8))
+    is_diffuse = entropy >= 0.86 and hot_area_ratio >= 0.25 and top_10_mass_ratio <= 0.35
+    return {
+        "entropy": round(entropy, 4),
+        "hot_area_ratio": round(hot_area_ratio, 4),
+        "top_10_mass_ratio": round(top_10_mass_ratio, 4),
+        "is_diffuse": is_diffuse,
+    }
+
+
+def detect_person_regions(image):
+    width, height = image.size
+    rgb = np.array(image)
+    gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
+    face_boxes = detect_faces(gray)
+    body_boxes = detect_bodies(rgb)
+
+    face_mask = boxes_to_mask(face_boxes, width, height)
+    body_mask = boxes_to_mask(body_boxes, width, height)
+    body_mask = np.logical_and(body_mask, np.logical_not(face_mask))
+    person_mask = np.logical_or(face_mask, body_mask)
+    background_mask = np.logical_not(person_mask)
+
+    return {
+        "person_detected": bool(face_boxes or body_boxes),
+        "faces": face_boxes,
+        "bodies": body_boxes,
+        "masks": {
+            "face": face_mask,
+            "body": body_mask,
+            "background": background_mask,
+        },
+    }
+
+
+def detect_faces(gray):
+    cascade_path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+    detector = cv2.CascadeClassifier(cascade_path)
+    if detector.empty():
+        return []
+
+    boxes = detector.detectMultiScale(
+        gray,
+        scaleFactor=1.1,
+        minNeighbors=5,
+        minSize=(32, 32),
+    )
+    return [(int(x), int(y), int(w), int(h)) for x, y, w, h in boxes]
+
+
+def detect_bodies(rgb):
+    hog = cv2.HOGDescriptor()
+    hog.setSVMDetector(cv2.HOGDescriptor_getDefaultPeopleDetector())
+    boxes, _weights = hog.detectMultiScale(
+        cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR),
+        winStride=(8, 8),
+        padding=(8, 8),
+        scale=1.05,
+    )
+    return [(int(x), int(y), int(w), int(h)) for x, y, w, h in boxes]
+
+
+def boxes_to_mask(boxes, width, height):
+    mask = np.zeros((height, width), dtype=bool)
+    for x, y, w, h in boxes:
+        left = max(0, x)
+        top = max(0, y)
+        right = min(width, x + w)
+        bottom = min(height, y + h)
+        if right > left and bottom > top:
+            mask[top:bottom, left:right] = True
+    return mask
+
+
+def heatmap_region_scores(heatmap, masks, total_heat):
+    scores = {}
+    assigned_mask = np.zeros_like(heatmap, dtype=bool)
+    for key in ("face", "body", "background"):
+        mask = masks.get(key)
+        if mask is None or not mask.any():
+            continue
+        scores[key] = round(float(heatmap[mask].sum() / (total_heat + 1e-8)), 4)
+        assigned_mask = np.logical_or(assigned_mask, mask)
+
+    other_mask = np.logical_not(assigned_mask)
+    if other_mask.any():
+        scores["other"] = round(float(heatmap[other_mask].sum() / (total_heat + 1e-8)), 4)
+
+    return scores
+
+
+def region_interpretation(region):
+    messages = {
+        "face": "얼굴 영역 중심 반응입니다. 얼굴 보정 또는 합성 가능성을 우선 검토하세요.",
+        "body": "몸/인물 영역 중심 반응입니다. 인물 보정 또는 합성 가능성을 우선 검토하세요.",
+        "background": "배경 영역 중심 반응입니다. 배경 생성 또는 합성 가능성을 우선 검토하세요.",
+        "other": "분류되지 않은 국소 영역 중심 반응입니다. 객체 단위 분석이 필요할 수 있습니다.",
+    }
+    return messages.get(region, "국소 영역 중심 반응입니다.")

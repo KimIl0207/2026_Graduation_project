@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -35,6 +35,7 @@ class GradCamResponse(BaseModel):
     model: str = Field(..., description="Model used for Grad-CAM explanation.")
     image_base64: str = Field(..., description="Base64 PNG Grad-CAM overlay image.")
     note: str = Field(..., description="Grad-CAM explanation note.")
+    focus: Optional[Dict[str, Any]] = Field(None, description="Heatmap distribution and region-overlap analysis.")
 
 
 class ImagePredictionResponse(BaseModel):
