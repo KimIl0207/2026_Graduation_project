@@ -53,7 +53,7 @@ async def kakao_detect(req: Request):
                 f"결과: {label}\n"
                 f"의심 점수: {format_score(suspicious_score)}\n"
                 f"분석 프레임: {frame_count}\n\n"
-                "다른 텍스트, 이미지, 또는 영상을 보내주세요."
+                "다른 텍스트, 이미지를 보내주세요."
             )
             return kakao_response(text, QUICK_REPLY_RESTART)
 
@@ -104,4 +104,4 @@ async def kakao_detect(req: Request):
             print(f"Kakao text detection error: {e}")
             return kakao_response("텍스트 감지 실패. 다시 시도해주세요.", QUICK_REPLY_RESTART)
 
-    return kakao_response("10자 이상의 텍스트, 이미지, 또는 영상을 보내주세요.")
+    return kakao_response("10자 이상의 텍스트 또는 이미지를 보내주세요.")

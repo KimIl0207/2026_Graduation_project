@@ -1,4 +1,8 @@
-/* 1. 드래그 캡처 영역 (격자 무늬 및 스타일 통합) */
+@charset "UTF-8";
+
+/* ==========================================
+   1. 드래그 캡처 영역 (격자 무늬 및 스타일)
+   ========================================== */
 .deepfake-selection-box {
   position: fixed;
   border: 2px solid #00d1ff;
@@ -25,20 +29,25 @@
   white-space: nowrap;
 }
 
-/* 2. 모달창 기본 컨테이너*/
+/* ==========================================
+   2. 모달창 기본 컨테이너 (세로축 압축 보완)
+   ========================================== */
 #deepfake-result-modal {
   position: fixed;
   top: 20px;
   right: 20px;
   width: 320px;
-  /* 창을 조금 더 넓고 안정감 있게 */
-  padding: 24px;
+  padding: 16px !important;
+  /* 💡 화면 압축을 위해 기존 24px에서 축소 */
+  max-height: 90vh !important;
+  /* 💡 모달이 브라우저 화면 높이의 90%를 넘지 않도록 제한 */
+  overflow-y: auto !important;
+  /* 💡 내용이 너무 많아지면 내부 스크롤 제공 */
   background: rgba(255, 255, 255, 0.85);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border: 1px solid rgba(255, 255, 255, 0.6);
   border-radius: 20px;
-  /* 아이폰 위젯처럼 부드러운 라운딩 */
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1), 0 1px 10px rgba(0, 0, 0, 0.05);
   z-index: 2147483647;
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
@@ -46,7 +55,6 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  /* 전체 요소를 가운데 정렬 */
 }
 
 /* 제목 영역 */
@@ -58,17 +66,22 @@
   letter-spacing: -0.02em;
 }
 
-/* 캡처된 이미지/비디오 테두리 처리 */
+/* 🎥 캡처된 이미지/비디오 가로세로 최적화 처리 */
 .modal-media {
   width: 100%;
+  max-height: 250px !important;
+  /* 💡 영상/이미지가 화면을 너무 차지하지 않도록 최대 높이 고정 */
+  object-fit: contain !important;
+  /* 💡 영상 비율이 찌그러지거나 잘리지 않도록 안전 모드 설정 */
   border-radius: 12px;
-  margin-bottom: 20px;
+  margin-bottom: 12px !important;
+  /* 💡 하단 여백 축소 */
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-  /* 미디어에 옅은 그림자 추가 */
-  object-fit: cover;
 }
 
-/* 3. 분석 진행률 바 (Progress Bar) */
+/* ==========================================
+   3. 분석 진행률 바 (Progress Bar)
+   ========================================== */
 .modal-status-text {
   font-size: 14px;
   font-weight: 500;
@@ -80,18 +93,17 @@
 .progress-bar {
   width: 100%;
   height: 6px;
-  /* 슬림한 프로그레스 바 */
   background: rgba(0, 0, 0, 0.08);
   border-radius: 3px;
   overflow: hidden;
-  margin-bottom: 20px;
+  margin-bottom: 16px;
+  /* 💡 여백 미세 축소 */
 }
 
 .progress-fill {
   width: 0%;
   height: 100%;
   background: #007aff;
-  /* Apple Blue */
   border-radius: 3px;
   transition: width 0.4s cubic-bezier(0.25, 1, 0.5, 1);
 }
@@ -99,14 +111,16 @@
 /* 에러 메시지 텍스트 */
 .error-msg {
   color: #ff3b30;
-  /* iOS 기본 레드 컬러 */
   font-size: 13px;
   text-align: center;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
+  /* 💡 여백 축소 */
   line-height: 1.4;
 }
 
-/* 4. 버튼 공통 및 개별 스타일 */
+/* ==========================================
+   4. 버튼 세로형 그룹 스타일 (기존 레거시 유지)
+   ========================================== */
 .btn-group {
   display: flex;
   flex-direction: column;
@@ -141,9 +155,30 @@
 .close-btn {
   background: rgba(0, 0, 0, 0.05);
   color: #007aff;
-  /* 글씨만 파란색으로 처리 */
 }
 
 .close-btn:active {
   background: rgba(0, 0, 0, 0.1);
+}
+
+/* ==========================================
+   5. 신규: 버튼 가로 정렬 레이아웃 (반반 배치)
+   ========================================== */
+.button-row {
+  display: flex !important;
+  flex-direction: row !important;
+  gap: 8px !important;
+  /* 버튼 사이의 간격 균등 분배 */
+  width: 100% !important;
+  margin-top: 12px !important;
+}
+
+/* 가로 배열 안에서 버튼들이 50%씩 균등하게 나눠 갖도록 확장 */
+.button-row .modal-btn {
+  flex: 1 !important;
+  padding: 10px 0 !important;
+  /* 💡 세로 높이를 더 콤팩트하게 다듬음 */
+  text-align: center !important;
+  font-size: 14px !important;
+  /* 💡 가로폭 좁은 화면 대비 글자 크기 최적화 */
 }

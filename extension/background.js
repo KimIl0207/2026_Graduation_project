@@ -23,17 +23,15 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   const tabId = sender.tab ? sender.tab.id : 'unknown';
 
-  // [복구됨] 분석 강제 취소 요청이 들어왔을 때
   if (request.action === "CANCEL_ANALYSIS") {
     if (activeControllers[tabId]) {
-      activeControllers[tabId].abort(); // 진행 중인 fetch 통신 즉시 중단!
+      activeControllers[tabId].abort();
       delete activeControllers[tabId];
       console.log(`[탭 ${tabId}] 사용자에 의해 분석이 강제 취소되었습니다.`);
     }
     return true;
   }
 
-  // 화면 캡처 로직
   if (request.action === "CAPTURE_VISIBLE") {
     chrome.tabs.captureVisibleTab(null, { format: "png" }, (dataUrl) => {
       sendResponse(chrome.runtime.lastError ? { error: chrome.runtime.lastError.message } : { dataUrl: dataUrl });
@@ -41,62 +39,46 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
-  // 텍스트 분석 요청 처리
   if (request.action === "ANALYZE_TEXT_API") {
     if (activeControllers[tabId]) activeControllers[tabId].abort();
-
     const controller = new AbortController();
     activeControllers[tabId] = controller;
 
     handleTextAnalysis(request.text, controller.signal)
-      .then(data => {
-        delete activeControllers[tabId];
-        sendResponse({ success: true, data: data });
-      })
-      .catch(error => {
-        delete activeControllers[tabId];
-        if (error.name === 'AbortError') {
-          sendResponse({ success: false, error: "사용자 취소됨", isAborted: true });
-        } else {
-          sendResponse({ success: false, error: error.message });
-        }
-      });
+      .then(data => { delete activeControllers[tabId]; sendResponse({ success: true, data: data }); })
+      .catch(error => { delete activeControllers[tabId]; sendResponse({ success: false, error: error.message }); });
     return true;
   }
 
-  // 이미지 또는 비디오 분석 요청 처리
-  if (request.action === "ANALYZE_IMAGE_API" || request.action === "ANALYZE_VIDEO_API") {
+  if (request.action === "ANALYZE_IMAGE_API") {
     if (activeControllers[tabId]) activeControllers[tabId].abort();
-
     const controller = new AbortController();
     activeControllers[tabId] = controller;
 
-    const analysisPromise = request.action === "ANALYZE_IMAGE_API"
-      ? handleImageAnalysis(request.imgSrc, controller.signal)
-      : handleVideoAnalysis(request.videoDataUrl, controller.signal);
+    handleSingleImageAnalysis(request.imgSrc, controller.signal)
+      .then(data => { delete activeControllers[tabId]; sendResponse({ success: true, data: data }); })
+      .catch(error => { delete activeControllers[tabId]; sendResponse({ success: false, error: error.message }); });
+    return true;
+  }
 
-    analysisPromise
-      .then(data => {
-        delete activeControllers[tabId];
-        sendResponse({ success: true, data: data });
-      })
-      .catch(error => {
-        delete activeControllers[tabId];
-        if (error.name === 'AbortError') {
-          sendResponse({ success: false, error: "사용자 취소됨", isAborted: true });
-        } else {
-          sendResponse({ success: false, error: error.message });
-        }
-      });
+  // 🎥 [신규 비디오 전용 분기] 여러 장의 프레임 이미지 리스트를 서버로 대행 전송
+  if (request.action === "ANALYZE_VIDEO_LIST_API") {
+    if (activeControllers[tabId]) activeControllers[tabId].abort();
+    const controller = new AbortController();
+    activeControllers[tabId] = controller;
+
+    handleVideoListAnalysis(request.imgSrcList, controller.signal)
+      .then(data => { delete activeControllers[tabId]; sendResponse({ success: true, data: data }); })
+      .catch(error => { delete activeControllers[tabId]; sendResponse({ success: false, error: error.message }); });
     return true;
   }
 });
 
-// ** 연결 완료 ** 실제 백엔드 통신 함수 (이미지용 - 드래그/우클릭 완벽 대응 버전) 
-async function handleImageAnalysis(imgSrc, signal) {
+// 단일 이미지 분석 (/predict)
+async function handleSingleImageAnalysis(imgSrc, signal) {
   const storageData = await chrome.storage.local.get(['serverUrl']);
   const serverUrl = storageData.serverUrl;
-  if (!serverUrl) throw new Error("서버 주소가 설정되지 않았습니다. 옵션에서 주소를 입력해주세요.");
+  if (!serverUrl) throw new Error("서버 주소가 설정되지 않았습니다.");
 
   let blob;
   if (imgSrc.startsWith('data:')) {
@@ -104,9 +86,7 @@ async function handleImageAnalysis(imgSrc, signal) {
     const mimeString = imgSrc.split(',')[0].split(':')[1].split(';')[0];
     const ab = new ArrayBuffer(byteString.length);
     const ia = new Uint8Array(ab);
-    for (let i = 0; i < byteString.length; i++) {
-      ia[i] = byteString.charCodeAt(i);
-    }
+    for (let i = 0; i < byteString.length; i++) ia[i] = byteString.charCodeAt(i);
     blob = new Blob([ab], { type: mimeString });
   } else {
     const res = await fetch(imgSrc);
@@ -114,45 +94,56 @@ async function handleImageAnalysis(imgSrc, signal) {
   }
 
   const formData = new FormData();
-  formData.append("file", blob, "captured_image.jpg");
+  formData.append("file", blob, "image.jpg");
 
-  const response = await fetch(`${serverUrl}/predict`, {
+  const response = await fetch(`${serverUrl}/predict`, { method: "POST", headers: { "ngrok-skip-browser-warning": "true" }, body: formData, signal: signal });
+  return await response.json();
+}
+
+// 🎥 [비디오 프레임 리스트 전송 함수] FastAPI의 /predict_images 규격 완벽 연동
+async function handleVideoListAnalysis(imgSrcList, signal) {
+  const storageData = await chrome.storage.local.get(['serverUrl']);
+  const serverUrl = storageData.serverUrl;
+  if (!serverUrl) throw new Error("서버 주소가 설정되지 않았습니다.");
+
+  const formData = new FormData();
+
+  // 리스트 내의 모든 Base64 데이터를 순회하며 Blob 변환 후 하나의 'files' 키에 다중 추가(List화)
+  for (let i = 0; i < imgSrcList.length; i++) {
+    const imgSrc = imgSrcList[i];
+    const byteString = atob(imgSrc.split(',')[1]);
+    const mimeString = imgSrc.split(',')[0].split(':')[1].split(';')[0];
+    const ab = new ArrayBuffer(byteString.length);
+    const ia = new Uint8Array(ab);
+    for (let j = 0; j < byteString.length; j++) ia[j] = byteString.charCodeAt(j);
+    const blob = new Blob([ab], { type: mimeString });
+
+    // 💡 FastAPI Body_predict_frame_images_predict_images_post 스펙에 맞춰 필드명을 반드시 'files'로 매핑
+    formData.append("files", blob, `frame_${i}.jpg`);
+  }
+
+  const response = await fetch(`${serverUrl}/predict_images`, {
     method: "POST",
     headers: { "ngrok-skip-browser-warning": "true" },
     body: formData,
     signal: signal
   });
 
-  if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+  if (!response.ok) throw new Error(`HTTP 에러 발생! 상태코드: ${response.status}`);
   return await response.json();
 }
 
-
-// ** 수정됨 ** 실제 백엔드 API 서버와 통신하는 함수 (텍스트용)
+// 텍스트 분석 (/detect)
 async function handleTextAnalysis(text, signal) {
   const storageData = await chrome.storage.local.get(['serverUrl']);
   const serverUrl = storageData.serverUrl;
-  if (!serverUrl) throw new Error("서버 주소가 설정되지 않았습니다. 옵션에서 주소를 입력해주세요.");
+  if (!serverUrl) throw new Error("서버 주소가 설정되지 않았습니다.");
 
-  // 백엔드 주소에 맞춰 /detect 로 변경
   const response = await fetch(`${serverUrl}/detect`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "ngrok-skip-browser-warning": "true"
-    },
+    headers: { "Content-Type": "application/json", "ngrok-skip-browser-warning": "true" },
     body: JSON.stringify({ text: text }),
     signal: signal
   });
-
-  if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
   return await response.json();
-}
-
-// 5. ** 연결 준비중 ** 실제 백엔드 API 서버와 통신하는 함수 (비디오용)
-async function handleVideoAnalysis(videoDataUrl, signal) {
-  const storageData = await chrome.storage.local.get(['serverUrl']);
-  const serverUrl = storageData.serverUrl;
-  if (!serverUrl) throw new Error("서버 주소가 설정되지 않았습니다. 옵션에서 주소를 입력해주세요.");
-  throw new Error("확장프로그램 비디오 분석은 현재 지원하지 않습니다. 웹 화면의 Video Detection을 사용해주세요.");
 }
