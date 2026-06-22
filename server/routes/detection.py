@@ -1,0 +1,95 @@
+from typing import Union
+
+from fastapi import APIRouter, File, HTTPException, UploadFile
+
+from schemas import (
+    ErrorResponse,
+    ImagePredictionResponse,
+    TextDetectionResponse,
+    TextRequest,
+    VideoPredictionResponse,
+)
+from service.predic_video import predict_video as predict_video_file
+from service.predict import predict_image, predict_image_scores, robust_frame_score
+from state import get_text_detector, models_dict
+
+
+router = APIRouter()
+
+
+@router.post(
+    "/predict",
+    response_model=Union[ImagePredictionResponse, ErrorResponse],
+    response_model_exclude_none=True,
+    summary="Analyze image AI suspicious score",
+    tags=["Image Detection"],
+)
+async def predict(file: UploadFile = File(...)):
+    image_bytes = await file.read()
+    result = predict_image(image_bytes, models_dict)
+    if "error" not in result:
+        result = {
+            "filename": file.filename,
+            **result,
+        }
+    return result
+
+
+@router.post("/predict-frame")
+async def predict_frame(file: UploadFile = File(...)):
+    image_bytes = await file.read()
+    return predict_image(image_bytes, models_dict, mode="video", include_grad_cam=False)
+
+
+@router.post(
+    "/predict-video",
+    response_model=Union[VideoPredictionResponse, ErrorResponse],
+    response_model_exclude_none=True,
+    summary="Analyze video AI suspicious score",
+    tags=["Video Detection"],
+)
+async def predict_video(file: UploadFile = File(...)):
+    return await predict_video_file(file, models_dict)
+
+
+@router.post(
+    "/predict_images",
+    response_model=VideoPredictionResponse,
+    response_model_exclude_none=True,
+    summary="Analyze uploaded frame images",
+    tags=["Video Detection"],
+)
+async def predict_frame_images(files: list[UploadFile] = File(...)):
+    image_bytes_list = [await file.read() for file in files]
+    frame_scores = predict_image_scores(image_bytes_list, models_dict)
+    average_suspicious_score = robust_frame_score(frame_scores)
+    label = "Suspicious AI-like Video" if average_suspicious_score >= 0.5 else "Likely Real Video"
+
+    return {
+        "label": label,
+        "suspicious_score": round(average_suspicious_score, 4),
+        "frame_count": len(frame_scores),
+        "frame_predictions": [round(score, 4) for score in frame_scores],
+    }
+
+
+@router.post(
+    "/detect",
+    response_model=TextDetectionResponse,
+    response_model_exclude_none=True,
+    summary="Analyze text AI probability",
+    tags=["Text Detection"],
+)
+async def detect_text(request: TextRequest):
+    if not request.text or len(request.text.strip()) < 10 or len(request.text) > 2000:
+        raise HTTPException(
+            status_code=400,
+            detail="Text must be between 10 and 2000 characters.",
+        )
+
+    try:
+        detector = get_text_detector()
+        return detector.detect(request.text)
+    except Exception as e:
+        print(f"Text detection failed: {e}")
+        raise HTTPException(status_code=500, detail="Text detection failed.")

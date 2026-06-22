@@ -1,0 +1,333 @@
+package com.example.ai_detection;
+
+import android.content.Context;
+import android.content.Intent;
+import android.content.SharedPreferences;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.drawable.BitmapDrawable;
+import android.graphics.drawable.Drawable;
+import android.net.Uri;
+import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.util.Base64;
+import android.view.View;
+import android.widget.Button;
+import android.widget.FrameLayout;
+import android.widget.ImageView;
+import android.widget.ProgressBar;
+import android.widget.TextView;
+import android.widget.Toast;
+
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
+import androidx.appcompat.app.AppCompatActivity;
+
+import org.json.JSONObject;
+
+import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+
+import okhttp3.Call;
+import okhttp3.Callback;
+import okhttp3.MediaType;
+import okhttp3.MultipartBody;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.RequestBody;
+import okhttp3.Response;
+
+class ServerApi {
+    private Context context;
+
+    public ServerApi(Context context) {
+        this.context = context;
+    }
+
+    public String getBaseUrl() {
+        SharedPreferences prefs =
+                context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE);
+
+        return prefs.getString(
+                "server_url",
+                context.getString(R.string.server_url)
+        );
+    }
+
+    public String getPredictUrl() {
+        String baseUrl = getBaseUrl();
+
+        if (!baseUrl.endsWith("/")) {
+            baseUrl += "/";
+        }
+
+        return baseUrl + "predict";
+    }
+}
+
+public class ImageDetectionActivity extends AppCompatActivity {
+
+    private ActivityResultLauncher<String> galleryLauncher;
+    private ActivityResultLauncher<String> filePickerLauncher;
+
+    // 서버 통신을 위한 클라이언트 객체
+    private final OkHttpClient client = new OkHttpClient();
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_image_detection);
+
+        TextView tvStatus = findViewById(R.id.textViewStatus);
+        Button btnAnalyze = findViewById(R.id.buttonAnalyze);
+        Button btnReset = findViewById(R.id.buttonReset);
+        ProgressBar progressBar = findViewById(R.id.progressBarLoading);
+
+        FrameLayout layoutImageArea = findViewById(R.id.layoutImageArea);
+        TextView tvImageHint = findViewById(R.id.textViewImageHint);
+        ImageView imageViewUploaded = findViewById(R.id.imageViewUploaded);
+        ImageView imageViewGradCam = new ImageView(this);
+        imageViewGradCam.setLayoutParams(new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+        ));
+        imageViewGradCam.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        imageViewGradCam.setVisibility(View.GONE);
+        layoutImageArea.addView(imageViewGradCam);
+
+        // --- 외부 앱 공유나 위젯 캡처 등 넘어온 이미지 처리 ---
+        Intent intent = getIntent();
+        String action = intent.getAction();
+        String type = intent.getType();
+
+        Uri imageUri = null;
+
+        if (intent.getData() != null) {
+            imageUri = intent.getData();
+        } else if (Intent.ACTION_SEND.equals(action) && type != null && type.startsWith("image/")) {
+            imageUri = intent.getParcelableExtra(Intent.EXTRA_STREAM);
+        } else {
+            String capturedImagePath = intent.getStringExtra("capturedImagePath");
+            if (capturedImagePath != null) {
+                Bitmap capturedBitmap = BitmapFactory.decodeFile(capturedImagePath);
+                imageViewUploaded.setImageBitmap(capturedBitmap);
+                imageViewUploaded.setVisibility(View.VISIBLE);
+                imageViewGradCam.setVisibility(View.GONE);
+                tvImageHint.setVisibility(View.GONE);
+            }
+        }
+
+        if (imageUri != null) {
+            imageViewUploaded.setImageURI(imageUri);
+            imageViewUploaded.setVisibility(View.VISIBLE);
+            imageViewGradCam.setVisibility(View.GONE);
+            tvImageHint.setVisibility(View.GONE);
+        }
+
+        // 파일/텍스트 선택 핸들러
+        filePickerLauncher = registerForActivityResult(
+                new ActivityResultContracts.GetContent(),
+                uri -> {
+                    if (uri != null) {
+                        String mimeType = getContentResolver().getType(uri);
+                        String uriStr = uri.toString().toLowerCase();
+
+                        if ((mimeType != null && mimeType.startsWith("image/")) || uriStr.contains(".jpg") || uriStr.contains(".png") || uriStr.contains(".jpeg")) {
+                            imageViewUploaded.setImageURI(uri);
+                            imageViewUploaded.setVisibility(View.VISIBLE);
+                            imageViewGradCam.setVisibility(View.GONE);
+                            tvImageHint.setVisibility(View.GONE);
+                        } else if ((mimeType != null && mimeType.startsWith("text/")) || uriStr.contains(".txt")) {
+                            String extractedText = readTextFile(uri);
+                            Intent textIntent = new Intent(this, TextDetectionActivity.class);
+                            textIntent.putExtra("textData", extractedText);
+                            startActivity(textIntent);
+                            finish();
+                        }
+                    }
+                }
+        );
+
+        TextView navFile = findViewById(R.id.navFile);
+        navFile.setOnClickListener(v -> filePickerLauncher.launch("*/*"));
+
+        TextView navText = findViewById(R.id.navText);
+        navText.setOnClickListener(v -> {
+            startActivity(new Intent(this, TextDetectionActivity.class));
+            finish();
+        });
+
+        galleryLauncher = registerForActivityResult(
+                new ActivityResultContracts.GetContent(),
+                uri -> {
+                    if (uri != null) {
+                        imageViewUploaded.setImageURI(uri);
+                        imageViewUploaded.setVisibility(View.VISIBLE);
+                        imageViewGradCam.setVisibility(View.GONE);
+                        tvImageHint.setVisibility(View.GONE);
+                    }
+                }
+        );
+
+        layoutImageArea.setOnClickListener(v -> galleryLauncher.launch("image/*"));
+
+        ServerApi serverApi = new ServerApi(this);
+
+        // [핵심] 판독하기 버튼: 진짜 서버 연동 로직
+        btnAnalyze.setOnClickListener(v -> {
+            if (imageViewUploaded.getVisibility() == View.GONE || imageViewUploaded.getDrawable() == null) {
+                Toast.makeText(this, "먼저 판독할 이미지를 선택해주세요!", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            progressBar.setVisibility(View.VISIBLE);
+            imageViewGradCam.setVisibility(View.GONE);
+            tvStatus.setText("AI 분석 서버와 통신 중입니다...");
+            tvStatus.setTextColor(Color.BLACK); // 문구 색상 초기화
+
+            // 1. ImageView에서 비트맵 추출
+            Bitmap bitmap;
+            Drawable drawable = imageViewUploaded.getDrawable();
+            if (drawable instanceof BitmapDrawable) {
+                bitmap = ((BitmapDrawable) drawable).getBitmap();
+            } else {
+                bitmap = Bitmap.createBitmap(drawable.getIntrinsicWidth(), drawable.getIntrinsicHeight(), Bitmap.Config.ARGB_8888);
+                Canvas canvas = new Canvas(bitmap);
+                drawable.setBounds(0, 0, canvas.getWidth(), canvas.getHeight());
+                drawable.draw(canvas);
+            }
+
+            // 2. JPG 데이터로 압축
+            ByteArrayOutputStream stream = new ByteArrayOutputStream();
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 100, stream);
+            byte[] byteArray = stream.toByteArray();
+
+            // 3. 폼 데이터 구성
+            RequestBody requestBody = new MultipartBody.Builder()
+                    .setType(MultipartBody.FORM)
+                    .addFormDataPart("file", "detect.jpg",
+                            RequestBody.create(byteArray, MediaType.parse("image/jpeg")))
+                    .build();
+
+            // 4. 서버 요청 생성 (끝에 /predict 확인)
+            Request request = new Request.Builder()
+                    .url(serverApi.getPredictUrl())
+                    .post(requestBody)
+                    .build();
+
+            // 5. 서버 전송 및 응답 처리
+            client.newCall(request).enqueue(new Callback() {
+                @Override
+                public void onFailure(Call call, IOException e) {
+                    new Handler(Looper.getMainLooper()).post(() -> {
+                        progressBar.setVisibility(View.GONE);
+                        tvStatus.setText("❌ 서버 연결 실패\n(네트워크나 서버 상태를 확인해주세요)");
+                        tvStatus.setTextColor(Color.RED);
+                    });
+                }
+
+                @Override
+                public void onResponse(Call call, Response response) throws IOException {
+                    if (response.isSuccessful() && response.body() != null) {
+                        String responseData = response.body().string();
+                        try {
+                            JSONObject jsonObject = new JSONObject(responseData);
+                            String label = jsonObject.getString("label");
+                            double probability = jsonObject.getDouble("probability");
+                            int percent = (int) (probability * 100);
+
+                            // ✨ 추가된 데이터 1: 생성 모델 이름
+                            String generatorModel = jsonObject.optString("generator_model", "알 수 없음");
+
+                            // ✨ 추가된 데이터 2: 세부 확률 (probs)
+                            String probsText = "";
+                            if (jsonObject.has("probs")) {
+                                JSONObject probsObject = jsonObject.getJSONObject("probs");
+                                int sdPercent = (int) (probsObject.getDouble("sd") * 100);
+                                int mjPercent = (int) (probsObject.getDouble("mj") * 100);
+                                int bgPercent = (int) (probsObject.getDouble("bg") * 100);
+
+                                // 화면에 띄울 세부 확률 문구 조립
+                                probsText = "\n📊 상세: SD(" + sdPercent + "%), MJ(" + mjPercent + "%), BG(" + bgPercent + "%)";
+                            }
+
+                            final String resultMsg;
+
+                            if ("AI Generated".equals(label)) {
+                                // AI 이미지인 경우, 모델 이름과 세부 확률까지 모두 한 번에 출력!
+                                resultMsg = "판독 완료: AI 생성 확률 " + percent + "%\n💡 유력 모델: " + generatorModel + probsText;
+                            } else if ("Real Image".equals(label)) {
+                                resultMsg = "판독 완료: 진짜 사진일 확률 " + percent + "% 입니다.";
+                            } else {
+                                resultMsg = "💡 판독 완료: [" + label + "] 확률 " + percent + "%";
+                            }
+
+                            // 서버가 반환한 Grad-CAM overlay를 디코딩한다.
+                            // 이 이미지는 모델이 판정할 때 상대적으로 크게 본 영역을 heatmap으로 합성한 PNG다.
+                            Bitmap gradCamBitmap = null;
+                            if (jsonObject.has("grad_cam") && !jsonObject.isNull("grad_cam")) {
+                                JSONObject gradCamObject = jsonObject.getJSONObject("grad_cam");
+                                String gradCamBase64 = gradCamObject.optString("image_base64", "");
+                                if (!gradCamBase64.isEmpty()) {
+                                    byte[] gradCamBytes = Base64.decode(gradCamBase64, Base64.DEFAULT);
+                                    gradCamBitmap = BitmapFactory.decodeByteArray(gradCamBytes, 0, gradCamBytes.length);
+                                }
+                            }
+
+                            final Bitmap finalGradCamBitmap = gradCamBitmap;
+
+                            new Handler(Looper.getMainLooper()).post(() -> {
+                                progressBar.setVisibility(View.GONE);
+                                tvStatus.setText(resultMsg);
+                                if (finalGradCamBitmap != null) {
+                                    imageViewGradCam.setImageBitmap(finalGradCamBitmap);
+                                    imageViewGradCam.setVisibility(View.VISIBLE);
+                                }
+                            });
+
+                        } catch (Exception e) {
+                            new Handler(Looper.getMainLooper()).post(() -> {
+                                progressBar.setVisibility(View.GONE);
+                                tvStatus.setText("⚠️ 응답 데이터 분석 오류가 발생했습니다.");
+                            });
+                        }
+                    } else {
+                        new Handler(Looper.getMainLooper()).post(() -> {
+                            progressBar.setVisibility(View.GONE);
+                            tvStatus.setText("⚠️ 서버 에러 (코드: " + response.code() + ")");
+                        });
+                    }
+                }
+            });
+        });
+
+        btnReset.setOnClickListener(v -> {
+            tvStatus.setText("AI가 이미지를 생성했는지 판독해요.");
+            tvStatus.setTextColor(Color.BLACK);
+            progressBar.setVisibility(View.GONE);
+            imageViewUploaded.setImageURI(null);
+            imageViewUploaded.setVisibility(View.GONE);
+            imageViewGradCam.setImageURI(null);
+            imageViewGradCam.setVisibility(View.GONE);
+            tvImageHint.setVisibility(View.VISIBLE);
+        });
+    }
+
+    private String readTextFile(Uri uri) {
+        StringBuilder stringBuilder = new StringBuilder();
+        try (InputStream inputStream = getContentResolver().openInputStream(uri);
+             BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                stringBuilder.append(line).append("\n");
+            }
+        } catch (Exception e) { e.printStackTrace(); }
+        return stringBuilder.toString();
+    }
+}

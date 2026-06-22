@@ -1,113 +1,200 @@
-# 🧠 AI Image Detector
+# AI Detection Project
 
-AI가 생성한 이미지와 실제 이미지를 구분하는 딥러닝 기반 분류 시스템입니다.
-EfficientNet 모델을 활용하여 높은 정확도로 **AI vs Real 이미지 판별**을 수행합니다.
+Image AI detection, text AI detection, correction data collection, and frontend/mobile clients.
 
----
+## Structure
 
-## 🚀 Features
-
-* 🔍 이미지 업로드 후 AI 여부 실시간 판별
-* 🧠 EfficientNet 기반 이미지 분류 모델
-* 📊 확률 기반 결과 제공 (confidence score)
-
----
-
-## ⚙️ Tech Stack
-
-* 🐍 Python / PyTorch
-* ⚡ FastAPI
-* ⚛️ React (create-react-app)
-* 🧠 EfficientNet (Image Classification)
-
----
-
-## 📦 Installation
-
-### Backend
-
-```bash
-pip install fastapi uvicorn torch torchvision pillow
+```text
+.
+|-- front/                     # React web UI
+|-- mobile/                    # Mobile client
+|-- server/
+|   |-- main.py                # Image and text detection FastAPI server
+|   |-- requirements.txt
+|   |-- model/                 # Image model weights
+|   |-- service/
+|   |   |-- ai_text_detector_engine.py
+|   |   |-- model_loader.py
+|   |   `-- predict.py
+|   |-- util/
+|   |   |-- logger.py
+|   |   `-- save_correction.py
+|   `-- corrections/           # Ignored correction images/logs
+`-- ngrok.exe                  # Local ngrok binary, ignored by git
 ```
 
-```bash
-uvicorn test:app --reload
+## Backend
+
+Run commands from the `server` directory.
+
+```powershell
+cd server
+pip install -r requirements.txt
 ```
 
----
+API server:
 
-### Frontend
+```powershell
+uvicorn main:app --host 0.0.0.0 --port 8000
+```
 
-```bash
+Docker:
+
+```powershell
+docker build -t ai-detection-server .
+docker run --rm -p 8000:8000 --env-file server/.env ai-detection-server
+```
+
+The Docker image excludes local correction data in `server/corrections/`.
+Use a volume or external storage if correction uploads need to persist in production.
+
+## Image API
+
+`GET /`
+
+```json
+{"message": "Server is running"}
+```
+
+`POST /predict`
+
+Form data:
+
+```text
+file=<image file>
+```
+
+Response:
+
+```json
+{
+  "label": "AI Generated",
+  "probability": 0.8123,
+  "generator_model": "mj",
+  "probs": {
+    "sd": 0.1234,
+    "mj": 0.8123,
+    "bg": 0.2345
+  }
+}
+```
+
+If the max probability is lower than `0.5`, the result is:
+
+```json
+{
+  "label": "Real Image",
+  "generator_model": "Not an ai"
+}
+```
+
+`POST /save-correction`
+
+Form data:
+
+```text
+file=<image file>
+correct_label=real|fake
+predicted_label=<optional>
+predicted_probability=<optional>
+selected_generator_model=<optional>
+sd_prob=<optional>
+mj_prob=<optional>
+bg_prob=<optional>
+```
+
+Behavior:
+
+- Saves corrected images to `server/corrections/real` or `server/corrections/fake`
+- Appends correction metadata to `server/corrections/logs.jsonl`
+- Uses `server/util/save_correction.py` and `server/util/logger.py`
+
+## Text API
+
+`POST /detect`
+
+Body:
+
+```json
+{
+  "text": "text to analyze"
+}
+```
+
+The text detector uses Hugging Face models. If the model is private, create `server/.env`.
+
+```powershell
+cd server
+New-Item .env
+```
+
+Then set:
+
+```text
+HF_TOKEN=your_huggingface_token
+```
+
+## Frontend
+
+The frontend is a Create React App project.
+
+```powershell
+cd front
 npm install
 npm start
 ```
 
----
-
-## 📸 Usage
-
-1. 이미지를 업로드합니다.
-2. AI 여부 및 확률이 표시됩니다.
-3. 결과가 틀렸다면:
-
-   * "실제 사진" 또는 "AI 이미지" 버튼 클릭
-   * 자동으로 데이터셋에 저장됩니다.
-
----
-
-## 🔁 Training Pipeline
+Default URL:
 
 ```text
-1. 데이터 수집 (real / fake)
-2. EfficientNet 학습
-3. 모델 배포
-4. 사용자 피드백 수집 (corrections)
-5. 데이터셋 확장
-6. 재학습
+http://localhost:3000
 ```
 
----
+If port `3000` is already in use:
 
-## 📊 Dataset
+```powershell
+$env:PORT="3001"
+npm start
+```
 
-* Real Images:
+Set the backend URL in `front/.env` or in `front/src/App.js`, depending on the current local setup.
 
-  * COCO Dataset
-  * 실제 촬영 이미지
-* Fake Images:
+## ngrok
 
-  * DiffusionDB (부분 샘플)
+Expose the API server:
 
----
+```powershell
+.\ngrok.exe http 8000
+```
 
-## 🧪 Model
+Expose the frontend:
 
-* Architecture: EfficientNet-B0
-* Input Size: 224x224
-* Loss: BCEWithLogitsLoss
-* Output:
+```powershell
+.\ngrok.exe http 3000
+```
 
-  * 0 → Real Image
-  * 1 → AI Generated
+If the frontend runs on `3001`:
 
----
+```powershell
+.\ngrok.exe http 3001
+```
 
-## 📈 Future Improvements
+Update the frontend backend URL after ngrok gives a new backend URL.
 
-* 🔍 더 다양한 생성 모델 대응 (Midjourney, DALL·E 등)
-* 📊 Grad-CAM 시각화 추가
-* ⚡ 모델 경량화 (모바일, 크롬 확장프로그램, 응용프로그램 지원)
-* 🌐 배포 (AWS / Docker)
+## Model Files
 
----
+Expected image model files:
 
-## 🧑‍💻 Author
+```text
+server/model/best_efficientnet_b0_Diffusion.pth
+server/model/best_efficientnet_b0_Midjourney.pth
+server/model/best_efficientnet_b0_BigGAN.pth
+```
 
-* AI / Software Engineering Project
+Image input is resized to `224x224` in `server/service/predict.py`.
 
----
+## Notes
 
-## ⭐️ License
-
-MIT License
+- `front/`, `server/corrections/`, `ngrok.exe`, and cache directories are ignored by git.
+- Correction data is local training feedback data.
+- Keep server imports relative to the `server` directory, for example `from service...` and `from util...`.
