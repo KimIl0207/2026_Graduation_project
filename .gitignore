@@ -41,6 +41,7 @@ ngrok.exe
 /server/benchmark_predictions.csv
 /server/benchmark_results.csv
 /server/benchmark_truth.csv
+/__pycache__
 /.env
 /.env.example
 **/.env
